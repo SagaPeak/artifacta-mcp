@@ -1,0 +1,108 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "artifacta-mcp"
+version = "1.0.1"
+description = "Artifacta MCP server — exposes the Artifacta artifact store to AI agents via the Model Context Protocol"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "Artifacta", email = "team@artifacta.io" },
+]
+keywords = ["artifacts", "ai", "agents", "mcp", "model-context-protocol"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    # Shared HTTP layer — single client implementation across CLI/SDK/MCP (plan §8.1).
+    # Floor is 0.3.0 because that minor adds Client.request_upload_url,
+    # Client.complete_upload, and the Client.push content_type kwarg — all
+    # surface this MCP server hard-depends on. Anything below 0.3 will
+    # AttributeError / TypeError at first call. Upper bound stays at <2.0 to
+    # preserve the original major-version tolerance; SDK 1.x will be revisited
+    # when it ships (cross-validation tests pin the wire-shape contract).
+    "artifacta-cli>=0.3.0,<2.0.0",
+    # Official MCP Python SDK
+    "mcp>=1.0.0",
+    # Schema validation for tool inputs (matches Ajv role in the TS server)
+    "jsonschema>=4.20.0",
+]
+
+[project.urls]
+Homepage      = "https://artifacta.io"
+Documentation = "https://docs.artifacta.io/mcp/overview"
+Repository    = "https://github.com/SagaPeak/artifacta-mcp"
+Issues        = "https://github.com/SagaPeak/artifacta-mcp/issues"
+
+[project.scripts]
+artifacta-mcp = "artifacta_mcp.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.8.0",
+    "build>=1.0",
+    "twine>=5.0",
+    # langchain-core is required to run the LangChain adapter tests
+    # (test_langchain_adapter.py). It is lightweight (no model/provider deps),
+    # so it lives in `dev` to keep CI exercising the adapter's 11-tool contract.
+    "langchain-core>=0.3,<1.0",
+]
+# Framework integration extras (AF_MCP-6.5 / 6.6). These pull heavy, fast-moving
+# SDKs, so they are opt-in — the core MCP server never imports them. The wrapper
+# modules (artifacta_mcp.openai_agents / .langchain) lazy-import their SDK and
+# raise a clear install hint if the extra is absent.
+#
+# openai-agents is pre-1.0; the wrapper targets the stable `agents.mcp.MCPServerStdio`
+# surface present across the 0.x line. Bound <1.0 so a future major (which may
+# reshape the MCP API) is revalidated, not silently pulled. Floor is conservative;
+# tighten at HITL once validated against the live SDK release.
+openai-agents = [
+    "openai-agents>=0.0.7,<1.0",
+]
+# LangChain / LangGraph adapter (artifacta_mcp.langchain). Only langchain-core
+# is needed — the adapter wraps MCP tools as langchain_core.tools.StructuredTool
+# and does not depend on the full `langchain` meta-package, chains, or any model
+# provider. Bound <1.0 because LangChain's API is the most volatile of the
+# priority frameworks; revalidate before widening. The example script optionally
+# uses `langchain` + `langchain-openai` for an LLM-driven demo (not required by
+# the adapter itself).
+langchain = [
+    "langchain-core>=0.3,<1.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/artifacta_mcp"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/artifacta_mcp",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]  # line length is enforced by formatter, not lint
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"

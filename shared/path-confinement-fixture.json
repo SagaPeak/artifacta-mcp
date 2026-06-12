@@ -1,0 +1,103 @@
+{
+  "$schema_note": "Shared cross-validation fixture for the path-confinement engine. Both the TypeScript engine (mcp/typescript/src/path/confinement.ts) and the Python engine (mcp/python/src/artifacta_mcp/path_confinement.py) must produce the SAME accept/reject verdict for every case in `cases`. AF_MCP-6.2 cross-validation test consumes this file from both sides.",
+  "$semantics": {
+    "verdict_allow": "Engine returns ok=true (TS) / ConfinementAllow (Python) for an absolute, existing, regular file inside the allow-list and not on the deny-list, within the size ceiling.",
+    "verdict_deny_outside_allow": "Path resolves outside every allow-list root.",
+    "verdict_deny_denylist_root": "Path resolves under a built-in deny-list root (e.g., ~/.ssh, /etc).",
+    "verdict_deny_denylist_pattern": "Path matches a deny-list filename pattern (.env*, credentials.json).",
+    "verdict_deny_special_file": "Path resolves to a socket, FIFO, char device, or block device.",
+    "verdict_deny_size_exceeded": "Regular file exceeds the size ceiling (caller-provided or 500 MB default).",
+    "verdict_deny_unresolvable": "Path cannot be realpath()'d (ENOENT or symlink loop)."
+  },
+  "$placeholders": {
+    "$CWD$": "Replaced at test time with the absolute path returned by os.getcwd() (Python) / process.cwd() (TS).",
+    "$HOME$": "Replaced at test time with the absolute path returned by Path.home() (Python) / os.homedir() (TS).",
+    "$TMP_REGULAR_FILE$": "A regular file inside CWD created by the test harness — fixtures referencing it assume the harness wrote >=1 byte and the file exists.",
+    "$TMP_DIR$": "A temp directory inside CWD created by the test harness."
+  },
+  "cases": [
+    {
+      "id": "allow-cwd-relative-resolves-to-regular-file",
+      "input_path": "$TMP_REGULAR_FILE$",
+      "allow_roots": ["$CWD$"],
+      "verdict": "allow",
+      "note": "Default case — a regular file inside CWD is allowed."
+    },
+    {
+      "id": "deny-outside-allow-tmp-not-in-cwd",
+      "input_path": "/tmp",
+      "allow_roots": ["$CWD$"],
+      "verdict": "deny",
+      "rule": "outside_allow_list",
+      "note": "An absolute path outside CWD with only CWD in the allow-list."
+    },
+    {
+      "id": "deny-denylist-etc",
+      "input_path": "/etc/hosts",
+      "allow_roots": ["/"],
+      "verdict": "deny",
+      "rule": "denylist_root",
+      "denylist_root": "/etc",
+      "note": "/etc is always denied even if / is allow-listed. Cross-validation: TS resolves /etc/hosts to itself or /private/etc/hosts on macOS; both engines must match either way."
+    },
+    {
+      "id": "deny-denylist-ssh-key",
+      "input_path": "$HOME$/.ssh/id_rsa",
+      "allow_roots": ["$HOME$"],
+      "verdict": "deny",
+      "rule": "denylist_root",
+      "denylist_root_template": "$HOME$/.ssh",
+      "note": "The classic tripwire — even with $HOME allow-listed, ~/.ssh is denied."
+    },
+    {
+      "id": "deny-denylist-aws-credentials-dir",
+      "input_path": "$HOME$/.aws/credentials",
+      "allow_roots": ["$HOME$"],
+      "verdict": "deny",
+      "rule": "denylist_root",
+      "denylist_root_template": "$HOME$/.aws"
+    },
+    {
+      "id": "deny-denylist-netrc-file",
+      "input_path": "$HOME$/.netrc",
+      "allow_roots": ["$HOME$"],
+      "verdict": "deny",
+      "rule": "denylist_root",
+      "denylist_root_template": "$HOME$/.netrc",
+      "note": ".netrc is a single file rather than a directory but still listed as a deny root."
+    },
+    {
+      "id": "deny-pattern-env-file",
+      "input_path": "$TMP_DIR$/.env",
+      "allow_roots": ["$CWD$"],
+      "verdict": "deny",
+      "rule": "denylist_pattern",
+      "pattern": ".env*",
+      "note": "Filename pattern fires regardless of allow-list. Harness creates $TMP_DIR$/.env."
+    },
+    {
+      "id": "deny-pattern-env-local",
+      "input_path": "$TMP_DIR$/.env.local",
+      "allow_roots": ["$CWD$"],
+      "verdict": "deny",
+      "rule": "denylist_pattern",
+      "pattern": ".env*"
+    },
+    {
+      "id": "deny-pattern-credentials-json",
+      "input_path": "$TMP_DIR$/credentials.json",
+      "allow_roots": ["$CWD$"],
+      "verdict": "deny",
+      "rule": "denylist_pattern",
+      "pattern": "credentials.json"
+    },
+    {
+      "id": "deny-unresolvable-path",
+      "input_path": "$TMP_DIR$/does-not-exist-xyzzy",
+      "allow_roots": ["$CWD$"],
+      "verdict": "deny",
+      "rule": "unresolvable",
+      "note": "ENOENT before deny-list / allow-list can fire."
+    }
+  ]
+}

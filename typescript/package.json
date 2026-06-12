@@ -1,0 +1,63 @@
+{
+  "name": "@artifacta-mcp/mcp",
+  "version": "1.0.1",
+  "mcpName": "io.artifacta/mcp",
+  "description": "Artifacta MCP server — artifact store for AI agents (TypeScript, Node 20+).",
+  "type": "module",
+  "main": "./dist/server.js",
+  "bin": {
+    "artifacta-mcp": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "typecheck": "tsc --noEmit",
+    "secret-audit": "tsx scripts/secret-audit.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "homepage": "https://artifacta.io",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SagaPeak/artifacta-mcp.git",
+    "directory": "typescript"
+  },
+  "bugs": {
+    "url": "https://github.com/SagaPeak/artifacta-mcp/issues"
+  },
+  "license": "MIT",
+  "author": "Artifacta <team@artifacta.io>",
+  "keywords": [
+    "artifacta",
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "agents",
+    "artifact-store"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "smol-toml": "^1.6.1",
+    "undici": "^7.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

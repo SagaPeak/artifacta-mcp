@@ -4,8 +4,24 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const __filename = fileURLToPath(import.meta.url);
-const ROOT = dirname(dirname(__filename)); // mcp/typescript/
-const REPO_ROOT = dirname(dirname(ROOT));   // repo root
+const ROOT = dirname(dirname(__filename)); // the typescript/ package root
+
+// The CI/publish workflows live at the monorepo root (where this package sits
+// at mcp/typescript/). The standalone public mirror (SagaPeak/artifacta-mcp)
+// carries no workflows, so locate them by walking up instead of assuming a
+// fixed depth, and skip the workflow tests when they are absent.
+function findWorkflowsDir(start: string): string | null {
+  let dir = start;
+  for (let i = 0; i < 5; i++) {
+    const candidate = join(dir, ".github", "workflows");
+    if (existsSync(join(candidate, "mcp-typescript.yml"))) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+const WORKFLOWS_DIR = findWorkflowsDir(ROOT);
 
 interface PackageJson {
   name?: string;
@@ -155,9 +171,9 @@ describe("AF_MCP-6.1 — tsconfig produces ESM with sourcemaps", () => {
   });
 });
 
-describe("AF_MCP-6.1 — CI / publish workflows", () => {
-  const ci = join(REPO_ROOT, ".github", "workflows", "mcp-typescript.yml");
-  const publish = join(REPO_ROOT, ".github", "workflows", "mcp-publish.yml");
+describe.skipIf(WORKFLOWS_DIR === null)("AF_MCP-6.1 — CI / publish workflows", () => {
+  const ci = join(WORKFLOWS_DIR ?? "", "mcp-typescript.yml");
+  const publish = join(WORKFLOWS_DIR ?? "", "mcp-publish.yml");
 
   it("CI workflow exists at .github/workflows/mcp-typescript.yml", () => {
     expect(existsSync(ci)).toBe(true);

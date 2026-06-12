@@ -187,7 +187,7 @@ crew that hands a stored artifact from one agent to the next.
 
 ## Tool surface
 
-Same eleven tools as the TypeScript package (plan §2):
+Same eleven tools as the TypeScript package:
 
 | Tool | Safety | Notes |
 |------|--------|-------|
@@ -197,7 +197,7 @@ Same eleven tools as the TypeScript package (plan §2):
 | `get_artifact_download_url` | safe | Presigned R2 URL, 1-hour expiry |
 | `list_sessions` | safe | Sessions synthesized from artifacts |
 | `store_artifact` | writeIdempotent | Inline `content` ≤10 MB OR local `path` ≤500 MB |
-| `request_upload_url` | writeNonIdempotent | Pro only; 5xx is ambiguous — read §6.1 guidance |
+| `request_upload_url` | writeNonIdempotent | Pro only; 5xx is ambiguous — see Troubleshooting below |
 | `complete_upload` | writeIdempotent | Finalizes a `request_upload_url` artifact |
 | `create_download_link` | destructive | Public URL — gated behind `--allow-destructive` for non-compliant clients |
 | `delete_artifact` | destructive | Soft-delete; hard-delete after 30 days |
@@ -226,7 +226,7 @@ redaction and 200-char truncation.
   by allow-list membership of the link site).
 
 The Python engine is cross-validated against the TypeScript engine via the
-shared fixture at `mcp/shared/path-confinement-fixture.json`. Identical
+shared fixture at `shared/path-confinement-fixture.json`. Identical
 accept/reject is a tested contract.
 
 ## Troubleshooting
@@ -261,7 +261,7 @@ send bytes inline via the `content` field. If the path resolved to
 
 `request_upload_url` is non-idempotent (the API does not honor
 `Idempotency-Key` here). On 5xx or network error the reservation may have
-been created. Per plan §6.1: call `list_artifacts` with the same
+been created. Before retrying: call `list_artifacts` with the same
 `session_id`/`agent_id` before retrying to avoid duplicate artifacts.
 
 ## Versioning
@@ -273,7 +273,7 @@ package (`@artifacta-mcp/mcp`). Patch versions are independent. See the
 ## Development
 
 ```bash
-cd mcp/python
+cd python
 python -m venv .venv && source .venv/bin/activate
 pip install -e '.[dev]'
 pytest

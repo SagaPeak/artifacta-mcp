@@ -102,7 +102,7 @@ The most common failure mode is a missing or invalid API key. The MCP server its
 
 - **No key configured at all.** The server has no `--api-key`, no `ARTIFACTA_API_KEY`, and no `~/.artifacta/mcp.toml`. Set one of the three.
 - **Wrong env var name.** Must be `ARTIFACTA_API_KEY` exactly. `ARTIFACTA_KEY` and `API_KEY` are not read.
-- **Key revoked.** The key was rotated or revoked in the dashboard. Generate a new one at <https://artifacta.io/dashboard/api-keys>.
+- **Key revoked.** The key was rotated or revoked in the dashboard. Generate a new one at <https://app.artifacta.io/dashboard/keys>.
 - **Key shape mismatch.** Keys must match `ak_live_` followed by 32 alphanumeric characters. The server refuses to start (exit 2) if the configured key has the wrong shape.
 - **Tenant suspended.** The account is in the post-deletion grace period. The error message includes "suspended"; restore the account from the dashboard.
 

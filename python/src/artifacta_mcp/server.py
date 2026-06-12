@@ -84,17 +84,14 @@ def build_server(allow_destructive: bool, write_confirm_required: bool) -> Serve
             }
 
         if not is_call_permitted(reg, _has_confirmations(), allow_destructive):
+            # Same payload as the unknown-tool branch above so a gated tool is
+            # indistinguishable from an absent one (matches the TS port, which
+            # throws MethodNotFound here). Naming the gate would tell a probing
+            # client the tool exists and how to get it exposed.
             return {
                 "isError": True,
                 "content": [
-                    {
-                        "type": "text",
-                        "text": (
-                            f"Tool '{name}' is destructive and requires either a client that "
-                            "advertises experimental.confirmations, or the operator to launch "
-                            "the MCP server with --allow-destructive."
-                        ),
-                    }
+                    {"type": "text", "text": f"Bad arguments: unknown tool '{name}'."}
                 ],
                 "_meta": {"code": "invalid_request", "status": 400, "retry_hint": "do_not_retry"},
             }

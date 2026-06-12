@@ -88,7 +88,7 @@ export const STORE_ARTIFACT_TOOL: Tool = {
       path: {
         type: "string",
         description:
-          "Absolute local path inside the launcher-configured allow-list. The MCP server reads and streams this as multipart. Mutually exclusive with `content`. See §4.4 for confinement rules.",
+          "Absolute local path inside the launcher-configured allow-list. The MCP server reads and streams this as multipart. Mutually exclusive with `content`. Paths outside the allow-list are refused.",
       },
       content_type: {
         type: "string",

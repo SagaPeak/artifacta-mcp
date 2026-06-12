@@ -4,6 +4,29 @@ All notable changes to `@artifacta-mcp/mcp` are documented here. The format foll
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] — 2026-06-12
+
+Pre-open-source polish — no tool-surface or behavior changes for compliant
+clients. The source now also lives in a public mirror at
+[SagaPeak/artifacta-mcp](https://github.com/SagaPeak/artifacta-mcp).
+
+### Changed
+
+- `store_artifact` tool description: replaced a dangling internal spec
+  reference with a plain-language note on path-confinement refusals (both
+  ports).
+- Python port: a destructive tool call blocked by the safety gate now returns
+  the same "unknown tool" error as a tool that does not exist, matching the
+  TypeScript port's behavior — the gate no longer discloses which tools are
+  hidden or how to expose them.
+- `package.json` repository metadata points at the public repo.
+
+### Fixed
+
+- Documentation: corrected the API-key dashboard URL, removed monorepo-only
+  paths from the Python README, and fixed the TypeScript package name where
+  the Python docs referenced it.
+
 ## [1.0.1] — 2026-06-05
 
 Registry distribution metadata only — no runtime or tool-surface changes.

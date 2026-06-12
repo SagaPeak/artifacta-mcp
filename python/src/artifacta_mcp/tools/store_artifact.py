@@ -65,7 +65,7 @@ INPUT_SCHEMA = {
             "description": (
                 "Absolute local path inside the launcher-configured allow-list. The MCP server "
                 "reads and streams this as multipart. Mutually exclusive with `content`. "
-                "See §4.4 for confinement rules."
+                "Paths outside the allow-list are refused."
             ),
         },
         "content_type": {

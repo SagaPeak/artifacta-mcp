@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "artifacta": {
+      "command": "npx",
+      "args": ["-y", "@artifacta-mcp/mcp"],
+      "env": {
+        "ARTIFACTA_API_KEY": "${ARTIFACTA_API_KEY}"
+      }
+    }
+  }
+}

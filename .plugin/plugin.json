@@ -1,0 +1,14 @@
+{
+  "name": "artifacta",
+  "version": "1.0.2",
+  "description": "The artifact store for AI agents — persist, retrieve, and share agent outputs across runs, sessions, and tools.",
+  "author": {
+    "name": "Artifacta",
+    "email": "team@artifacta.io",
+    "url": "https://artifacta.io"
+  },
+  "homepage": "https://docs.artifacta.io/mcp/overview",
+  "repository": "https://github.com/SagaPeak/artifacta-mcp",
+  "license": "MIT",
+  "keywords": ["artifacts", "storage", "ai-agents", "mcp", "model-context-protocol", "memory"]
+}

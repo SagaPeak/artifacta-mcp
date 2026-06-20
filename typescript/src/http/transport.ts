@@ -32,6 +32,8 @@ import { ArtifactaHttpClient } from "./client.js";
 import { resolvePrincipal } from "./auth.js";
 import {
   runWithRequestContext,
+  SCOPE_READ,
+  SCOPE_WRITE,
   SCOPE_DESTROY,
   type Principal,
 } from "./request-context.js";
@@ -41,6 +43,32 @@ import {
 // remains the real size authority and returns file_too_large past plan limits.
 const MAX_BODY_BYTES = 32 * 1024 * 1024;
 
+// Canonical resource identifier for this MCP server (RFC 9728 / the MCP OAuth
+// spec's `resource` parameter). Carries the `/mcp` path. The protected-resource
+// metadata document, by contrast, lives at the host root (see WELL_KNOWN_PATH);
+// hosted-mcp.md line 67 pins the literal challenge URL to the root form.
+const DEFAULT_RESOURCE_URI = "https://mcp.artifacta.io/mcp";
+
+// RFC 9728 fixed location, served from the resource's origin (not under /mcp).
+const WELL_KNOWN_PATH = "/.well-known/oauth-protected-resource";
+
+// Supabase Auth is the OAuth 2.1 Authorization Server (HM-02). Trailing-slash-
+// free, matching the discovery base the spec advertises.
+const AUTHORIZATION_SERVER =
+  "https://vliolvdztzcrtuolrgdi.supabase.co/auth/v1";
+
+// The three MCP OAuth scopes (request-context.ts mirrors these for principals).
+const SCOPES_SUPPORTED = [SCOPE_READ, SCOPE_WRITE, SCOPE_DESTROY] as const;
+
+/** Absolute URL of the protected-resource metadata document for `resourceUri`.
+ * Per hosted-mcp.md line 67 this is the resource's *origin* + the well-known
+ * path — the `/mcp` path on `resourceUri` is intentionally dropped. The client
+ * fetches exactly this URL (handed to it via `resource_metadata`), so it never
+ * reconstructs the location itself. */
+function metadataUrl(resourceUri: string): string {
+  return new URL(resourceUri).origin + WELL_KNOWN_PATH;
+}
+
 export interface HttpServerOptions {
   /** TCP port to bind. 0 selects an ephemeral port (tests). */
   port: number;
@@ -48,6 +76,10 @@ export interface HttpServerOptions {
   config: Config;
   /** Exact-match allow-list for the Origin header. Empty disables browser clients. */
   allowedOrigins: readonly string[];
+  /** Canonical resource identifier (RFC 9728 `resource`) — what unauthenticated
+   * OAuth challenges advertise and what the protected-resource metadata reports.
+   * Defaults to {@link DEFAULT_RESOURCE_URI}; cli.ts threads `MCP_RESOURCE_URI`. */
+  resourceUri?: string;
 }
 
 export interface StartedHttpServer {
@@ -75,6 +107,13 @@ function setAcceptHeader(req: IncomingMessage, value: string): void {
     }
   }
   if (!found) raw.push("Accept", value);
+}
+
+/** RFC 9728 §5.1 challenge: point an OAuth-capable client at the protected-
+ * resource metadata so it can discover the authorization server. `resource_uri`
+ * is the canonical resource; the metadata URL is its origin-rooted well-known. */
+function bearerChallenge(resourceUri: string): string {
+  return `Bearer resource_metadata="${metadataUrl(resourceUri)}"`;
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -126,6 +165,10 @@ async function handleMcpPost(
   // AG-02: resolve the `ak_live_` bearer. The token itself is never logged.
   const principal = resolvePrincipal(headerValue(req.headers.authorization));
   if (!principal) {
+    // AG-05: OAuth-capable clients arriving without (or with a non-`ak_live_`)
+    // bearer get an RFC 9728 challenge pointing at the protected-resource
+    // metadata; the JSON error body is unchanged for the existing headless path.
+    res.setHeader("WWW-Authenticate", bearerChallenge(opts.resourceUri ?? DEFAULT_RESOURCE_URI));
     sendJson(res, 401, {
       error: {
         code: "unauthorized",
@@ -256,6 +299,21 @@ function route(opts: HttpServerOptions) {
 
     if (path === "/healthz" && method === "GET") {
       sendJson(res, 200, { status: "ok" });
+      return;
+    }
+
+    // AG-05: public OAuth Protected Resource Metadata (RFC 9728). No auth — a
+    // client fetches this *because* it has no token yet. Served from the host
+    // root regardless of `resourceUri`'s `/mcp` path.
+    if (path === WELL_KNOWN_PATH && method === "GET") {
+      const resourceUri = opts.resourceUri ?? DEFAULT_RESOURCE_URI;
+      res.setHeader("Cache-Control", "no-store");
+      sendJson(res, 200, {
+        resource: resourceUri,
+        authorization_servers: [AUTHORIZATION_SERVER],
+        scopes_supported: SCOPES_SUPPORTED,
+        bearer_methods_supported: ["header"],
+      });
       return;
     }
 

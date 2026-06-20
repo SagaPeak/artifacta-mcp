@@ -86,6 +86,73 @@ describe("GET /mcp", () => {
   });
 });
 
+describe("GET /.well-known/oauth-protected-resource (AG-05)", () => {
+  const WELL_KNOWN = "/.well-known/oauth-protected-resource";
+
+  it("returns 200 with the RFC 9728 metadata document", async () => {
+    const res = await fetch(`${base}${WELL_KNOWN}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    const body = (await res.json()) as {
+      resource: string;
+      authorization_servers: string[];
+      scopes_supported: string[];
+      bearer_methods_supported: string[];
+    };
+    // Default resourceUri keeps the /mcp path on `resource`.
+    expect(body.resource).toBe("https://mcp.artifacta.io/mcp");
+    expect(body.authorization_servers).toEqual([
+      "https://vliolvdztzcrtuolrgdi.supabase.co/auth/v1",
+    ]);
+    expect(body.scopes_supported).toEqual([
+      "artifacts:read",
+      "artifacts:write",
+      "artifacts:destroy",
+    ]);
+    expect(body.bearer_methods_supported).toEqual(["header"]);
+  });
+
+  it("does not require authentication", async () => {
+    // No Authorization header — the client fetches this precisely because it has
+    // no token yet.
+    const res = await fetch(`${base}${WELL_KNOWN}`, { method: "GET" });
+    expect(res.status).toBe(200);
+  });
+
+  // The metadata document lives at the resource's *origin* + well-known path,
+  // even though `resource` itself carries a path. Prove that split holds for a
+  // custom MCP_RESOURCE_URI and that `resource` is reported back verbatim.
+  it("reports the exact resourceUri and roots metadata at its origin", async () => {
+    const custom = await startHttpServer({
+      port: 0,
+      config: { apiKey: undefined, apiUrl: stub.url },
+      allowedOrigins: [ALLOWED_ORIGIN],
+      resourceUri: "https://mcp.example.test/mcp",
+    });
+    try {
+      const customBase = `http://127.0.0.1:${custom.port}`;
+      const res = await fetch(`${customBase}${WELL_KNOWN}`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { resource: string };
+      expect(body.resource).toBe("https://mcp.example.test/mcp");
+
+      // And the challenge for that server uses the origin-rooted metadata URL.
+      const unauth = await fetch(`${customBase}/mcp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: mcpBody("initialize", INITIALIZE_PARAMS),
+      });
+      expect(unauth.status).toBe(401);
+      expect(unauth.headers.get("www-authenticate")).toBe(
+        'Bearer resource_metadata="https://mcp.example.test/.well-known/oauth-protected-resource"'
+      );
+    } finally {
+      await custom.close();
+    }
+  });
+});
+
 describe("POST /mcp auth (AG-02)", () => {
   const headers = {
     "Content-Type": "application/json",
@@ -102,6 +169,33 @@ describe("POST /mcp auth (AG-02)", () => {
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe("unauthorized");
     expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+
+  // AG-05: the same 401 must also hand an OAuth-capable client the RFC 9728
+  // challenge so it can discover the authorization server. The default
+  // resourceUri (mcp.artifacta.io/mcp) resolves the metadata to the host root.
+  it("includes the WWW-Authenticate challenge pointing at the metadata", async () => {
+    const res = await fetch(`${base}/mcp`, {
+      method: "POST",
+      headers,
+      body: mcpBody("initialize", INITIALIZE_PARAMS),
+    });
+    expect(res.status).toBe(401);
+    expect(res.headers.get("www-authenticate")).toBe(
+      'Bearer resource_metadata="https://mcp.artifacta.io/.well-known/oauth-protected-resource"'
+    );
+  });
+
+  it("includes the challenge on a malformed (non ak_live_) bearer too", async () => {
+    const res = await fetch(`${base}/mcp`, {
+      method: "POST",
+      headers: { ...headers, Authorization: "Bearer not-an-artifacta-key" },
+      body: mcpBody("initialize", INITIALIZE_PARAMS),
+    });
+    expect(res.status).toBe(401);
+    expect(res.headers.get("www-authenticate")).toContain(
+      'resource_metadata="https://mcp.artifacta.io/.well-known/oauth-protected-resource"'
+    );
   });
 
   it("returns 401 when the bearer is not a well-formed ak_live_ key", async () => {

@@ -51,6 +51,7 @@ if (args.includes("--help") || args.includes("-h")) {
       "             ARTIFACTA_MCP_ALLOW_PATH=<paths>       Colon-separated extra allow-list roots",
       "             PORT=<n>                               HTTP port (--transport=http; Railway sets this)",
       "             MCP_ALLOWED_ORIGINS=<a,b>              Comma-separated allowed Origin headers (http)",
+      "             MCP_RESOURCE_URI=<url>                 Canonical OAuth resource URI (http; default mcp.artifacta.io/mcp)",
       "",
     ].join("\n")
   );
@@ -163,7 +164,11 @@ if (transportMode === "http") {
     .map((s) => s.trim())
     .filter(Boolean);
 
-  startHttpServer({ port: httpPort, config, allowedOrigins })
+  // AG-05: canonical resource identifier for OAuth metadata / challenges. The
+  // transport defaults this when unset, so omit the field rather than passing "".
+  const resourceUri = process.env.MCP_RESOURCE_URI?.trim() || undefined;
+
+  startHttpServer({ port: httpPort, config, allowedOrigins, resourceUri })
     .then((started) => {
       const shutdown = (): void => {
         void started.close().finally(() => process.exit(0));

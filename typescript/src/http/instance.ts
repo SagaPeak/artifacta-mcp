@@ -7,6 +7,7 @@
 // VERSION).
 
 import type { ArtifactaHttpClient } from "./client.js";
+import { getRequestContext } from "./request-context.js";
 
 let _client: ArtifactaHttpClient | undefined;
 
@@ -15,6 +16,11 @@ export function setHttpClient(client: ArtifactaHttpClient): void {
 }
 
 export function getHttpClient(): ArtifactaHttpClient {
+  // Hosted HTTP: each request carries its own key, so a request-scoped client
+  // takes precedence (request-context.ts). Stdio leaves the store empty and
+  // falls through to the process-wide singleton set at startup.
+  const ctx = getRequestContext();
+  if (ctx) return ctx.httpClient;
   if (!_client) {
     throw new Error(
       "HTTP client not initialised. Call setHttpClient() at startup before invoking tools or resources."

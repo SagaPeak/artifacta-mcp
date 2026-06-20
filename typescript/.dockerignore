@@ -1,0 +1,23 @@
+# Keep the build context small and secret-free (AG-04).
+# node_modules and dist are reproduced inside the image; never copy local ones.
+node_modules
+dist
+
+# Secrets must never enter the image.
+.env
+.env.*
+*.env
+
+# Tests, configs, and tooling not needed to build or run the server.
+test
+coverage
+scripts
+vitest.config.ts
+vitest.integration.config.ts
+
+# VCS / editor / OS cruft.
+.git
+.gitignore
+.gitattributes
+*.log
+.DS_Store

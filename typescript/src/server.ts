@@ -62,101 +62,157 @@ class ArtifactaServer extends Server {
   }
 }
 
-export const server = new ArtifactaServer(
-  { name: "artifacta", version: VERSION },
-  {
-    capabilities: {
-      tools: { listChanged: false },
-      resources: { subscribe: false, listChanged: false },
-      prompts: {},
-      logging: {},
-    },
-  }
-);
+const SERVER_INFO = { name: "artifacta", version: VERSION };
+const SERVER_OPTIONS = {
+  capabilities: {
+    tools: { listChanged: false },
+    resources: { subscribe: false, listChanged: false },
+    prompts: {},
+    logging: {},
+  },
+};
 
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  const caps = server.getClientCapabilities();
-  const flags = server.getSafetyFlags();
-  const hasConfirmations = !!caps?.experimental?.["confirmations"];
-  return {
-    tools: getFilteredTools({
-      hasConfirmations,
-      allowDestructive: flags.allowDestructive,
-      writeConfirmRequired: flags.writeConfirmRequired,
-    }),
-  };
-});
-
-server.setRequestHandler(CallToolRequestSchema, async (req) => {
-  const name = req.params.name;
-  const reg = getToolRegistration(name);
-  if (!reg) {
-    throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
-  }
-  const caps = server.getClientCapabilities();
-  const flags = server.getSafetyFlags();
-  const hasConfirmations = !!caps?.experimental?.["confirmations"];
-
-  // Enforce the same gate as tools/list: block direct calls to destructive tools
-  // when the client has no confirmation surface and --allow-destructive was not set.
-  // Using MethodNotFound so the client cannot distinguish "blocked" from "absent".
-  if (!isCallPermitted(reg, hasConfirmations, flags.allowDestructive)) {
-    throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
-  }
-
-  // Audit destructive calls when --allow-destructive is the sole reason they're exposed
-  if (reg.safety === "destructive" && flags.allowDestructive && !hasConfirmations) {
-    emitDestructiveAudit(name, req.params.arguments);
-  }
-
-  const requestId = randomUUID();
-  const start = performance.now();
-  logger.debug("tool dispatch", { tool: name, request_id: requestId });
-
-  let success = true;
-  let errorCode: string | undefined;
-  try {
-    const result = await reg.handler(req.params.arguments, { requestId });
-
-    if (result.isError) {
-      success = false;
-      const meta = result._meta as { code?: unknown } | undefined;
-      if (meta && typeof meta.code === "string") errorCode = meta.code;
-    }
-
+/**
+ * Wire every JSON-RPC request handler onto `srv`. Extracted so the hosted HTTP
+ * transport can mint a fresh server per request (stateless mode — see
+ * src/http/transport.ts) while stdio keeps the long-lived singleton below.
+ * Handlers read per-call state (client capabilities, safety flags) off `srv`,
+ * never the module singleton, so per-request instances stay isolated.
+ */
+function wireHandlers(srv: ArtifactaServer): void {
+  srv.setRequestHandler(ListToolsRequestSchema, async () => {
+    const caps = srv.getClientCapabilities();
+    const flags = srv.getSafetyFlags();
+    const hasConfirmations = !!caps?.experimental?.["confirmations"];
     return {
-      ...result,
-      _meta: { ...(result._meta ?? {}), request_id: requestId },
+      tools: getFilteredTools({
+        hasConfirmations,
+        allowDestructive: flags.allowDestructive,
+        writeConfirmRequired: flags.writeConfirmRequired,
+      }),
     };
-  } catch (err) {
-    success = false;
-    if (err instanceof McpError) {
-      errorCode = "mcp_error";
-    } else {
-      errorCode = "internal_error";
-    }
-    logger.error("tool handler threw", {
-      tool: name,
-      request_id: requestId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    throw err;
-  } finally {
-    const latencyMs = Math.max(1, Math.round(performance.now() - start));
-    emitTelemetry({
-      tool_name: name,
-      latency_ms: latencyMs,
-      success,
-      error_code: errorCode,
-      server_version: VERSION,
-    });
-  }
-});
+  });
 
-registerSetLevelHandler(server);
+  srv.setRequestHandler(CallToolRequestSchema, async (req) => {
+    const name = req.params.name;
+    const reg = getToolRegistration(name);
+    if (!reg) {
+      throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+    }
+    const caps = srv.getClientCapabilities();
+    const flags = srv.getSafetyFlags();
+    const hasConfirmations = !!caps?.experimental?.["confirmations"];
+
+    // Enforce the same gate as tools/list: block direct calls to destructive tools
+    // when the client has no confirmation surface and --allow-destructive was not set.
+    // Using MethodNotFound so the client cannot distinguish "blocked" from "absent".
+    if (!isCallPermitted(reg, hasConfirmations, flags.allowDestructive)) {
+      throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+    }
+
+    // Audit destructive calls when --allow-destructive is the sole reason they're exposed
+    if (reg.safety === "destructive" && flags.allowDestructive && !hasConfirmations) {
+      emitDestructiveAudit(name, req.params.arguments);
+    }
+
+    const requestId = randomUUID();
+    const start = performance.now();
+    logger.debug("tool dispatch", { tool: name, request_id: requestId });
+
+    let success = true;
+    let errorCode: string | undefined;
+    try {
+      const result = await reg.handler(req.params.arguments, { requestId });
+
+      if (result.isError) {
+        success = false;
+        const meta = result._meta as { code?: unknown } | undefined;
+        if (meta && typeof meta.code === "string") errorCode = meta.code;
+      }
+
+      return {
+        ...result,
+        _meta: { ...(result._meta ?? {}), request_id: requestId },
+      };
+    } catch (err) {
+      success = false;
+      if (err instanceof McpError) {
+        errorCode = "mcp_error";
+      } else {
+        errorCode = "internal_error";
+      }
+      logger.error("tool handler threw", {
+        tool: name,
+        request_id: requestId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    } finally {
+      const latencyMs = Math.max(1, Math.round(performance.now() - start));
+      emitTelemetry({
+        tool_name: name,
+        latency_ms: latencyMs,
+        success,
+        error_code: errorCode,
+        server_version: VERSION,
+      });
+    }
+  });
+
+  registerSetLevelHandler(srv);
+
+  srv.setRequestHandler(ListResourcesRequestSchema, async () => {
+    // Static resources (always present) + dynamic recent-artifact enumeration
+    // per plan §3. The recent-artifact call is best-effort: a transient API
+    // failure must not break resources/list — the static surface still serves.
+    const statics = listResources();
+    const recent = await fetchRecentArtifactResources();
+    return { resources: [...statics, ...recent] };
+  });
+  srv.setRequestHandler(ReadResourceRequestSchema, async (req) => {
+    const uri = req.params.uri;
+    const exact = getResourceReader(uri);
+    if (exact) return exact(uri);
+    const tmpl = matchResourceTemplate(uri);
+    if (tmpl) return tmpl.read(uri, tmpl.params);
+    throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${uri}`);
+  });
+  srv.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
+    resourceTemplates: listResourceTemplates(),
+  }));
+  srv.setRequestHandler(ListPromptsRequestSchema, async () => ({
+    prompts: [],
+  }));
+
+  // Handle `shutdown` JSON-RPC request: respond then exit 0 gracefully.
+  // Not standard MCP, but required by plan §1.2 lifecycle spec.
+  srv.fallbackRequestHandler = async (request) => {
+    const method = (request as unknown as { method: string }).method;
+    if (method === "shutdown") {
+      setImmediate(() => process.exit(0));
+      return {};
+    }
+    throw new McpError(ErrorCode.MethodNotFound, `Method not found: ${method}`);
+  };
+}
+
+/** Build a fully-wired server instance. Used per-request by the HTTP transport. */
+export function createArtifactaServer(): ArtifactaServer {
+  const srv = new ArtifactaServer(SERVER_INFO, SERVER_OPTIONS);
+  wireHandlers(srv);
+  return srv;
+}
+
+/** Long-lived singleton used by the stdio entrypoint (cli.ts) and unit tests. */
+export const server = createArtifactaServer();
 
 // Failure escalation: when 3 consecutive HTTP failures land, surface a single
 // MCP `notifications/message` at level=error per plan §6.3 and keep serving.
+// Bound to the stdio singleton: stateless HTTP cannot push server-initiated
+// notifications in JSON-response mode, and its per-request servers are too
+// short-lived to own this, so the notifier no-ops there (the singleton is never
+// connected to an HTTP transport). The underlying failure counter in
+// escalation/tracker is process-global; acceptable for the Phase 0 canary.
 setOutageNotifier((message) => {
   void server
     .sendLoggingMessage({ level: "error", data: message })
@@ -167,37 +223,3 @@ setOutageNotifier((message) => {
     });
   logger.error(message);
 });
-
-server.setRequestHandler(ListResourcesRequestSchema, async () => {
-  // Static resources (always present) + dynamic recent-artifact enumeration
-  // per plan §3. The recent-artifact call is best-effort: a transient API
-  // failure must not break resources/list — the static surface still serves.
-  const statics = listResources();
-  const recent = await fetchRecentArtifactResources();
-  return { resources: [...statics, ...recent] };
-});
-server.setRequestHandler(ReadResourceRequestSchema, async (req) => {
-  const uri = req.params.uri;
-  const exact = getResourceReader(uri);
-  if (exact) return exact(uri);
-  const tmpl = matchResourceTemplate(uri);
-  if (tmpl) return tmpl.read(uri, tmpl.params);
-  throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${uri}`);
-});
-server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
-  resourceTemplates: listResourceTemplates(),
-}));
-server.setRequestHandler(ListPromptsRequestSchema, async () => ({
-  prompts: [],
-}));
-
-// Handle `shutdown` JSON-RPC request: respond then exit 0 gracefully.
-// Not standard MCP, but required by plan §1.2 lifecycle spec.
-server.fallbackRequestHandler = async (request) => {
-  const method = (request as unknown as { method: string }).method;
-  if (method === "shutdown") {
-    setImmediate(() => process.exit(0));
-    return {};
-  }
-  throw new McpError(ErrorCode.MethodNotFound, `Method not found: ${method}`);
-};

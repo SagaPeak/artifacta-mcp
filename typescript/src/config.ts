@@ -4,7 +4,9 @@ import { join } from "node:path";
 import { parse as parseToml } from "smol-toml";
 
 export const DEFAULT_API_URL = "https://api.artifacta.io";
-const KEY_REGEX = /^ak_live_[a-zA-Z0-9]{32}$/;
+/** API-key shape: `ak_live_` + 32 alphanumerics. Shared by stdio config loading
+ * and the hosted HTTP bearer resolver (src/http/auth.ts). */
+export const KEY_REGEX = /^ak_live_[a-zA-Z0-9]{32}$/;
 
 // Computed lazily. _ARTIFACTA_TOML_PATH_OVERRIDE is a test-only escape hatch
 // (same pattern as _ARTIFACTA_TEST_INJECT_EXCEPTION in cli.ts).

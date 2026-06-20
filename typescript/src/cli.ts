@@ -12,6 +12,7 @@ import { isLogLevel, setLogLevel, logger } from "./log/logger.js";
 import { setTelemetryMode } from "./telemetry/emitter.js";
 import { ArtifactaHttpClient } from "./http/client.js";
 import { setHttpClient } from "./http/instance.js";
+import { startHttpServer } from "./http/transport.js";
 import { registerAllTools, registerAllResources } from "./tools/index.js";
 
 const args = process.argv.slice(2);
@@ -34,6 +35,8 @@ if (args.includes("--help") || args.includes("-h")) {
       "Options:",
       "  --version, -v              Print version and exit",
       "  --help, -h                 Show this help",
+      "  --transport=stdio|http     Transport (default: stdio). http serves Streamable HTTP at POST /mcp",
+      "  --port=<n>                 HTTP port when --transport=http (default: $PORT or 8080)",
       "  --api-key=<key>            Artifacta API key (overrides env and config file)",
       "  --api-url=<url>            Artifacta API base URL (default: https://api.artifacta.io)",
       "  --profile=<name>           Config file profile to use (default: 'default')",
@@ -46,6 +49,8 @@ if (args.includes("--help") || args.includes("-h")) {
       "Env vars:    ARTIFACTA_API_KEY, ARTIFACTA_API_URL, ARTIFACTA_PROFILE",
       "             ARTIFACTA_MCP_REQUIRE_WRITE_CONFIRM=1  Require confirmation for write tools",
       "             ARTIFACTA_MCP_ALLOW_PATH=<paths>       Colon-separated extra allow-list roots",
+      "             PORT=<n>                               HTTP port (--transport=http; Railway sets this)",
+      "             MCP_ALLOWED_ORIGINS=<a,b>              Comma-separated allowed Origin headers (http)",
       "",
     ].join("\n")
   );
@@ -72,6 +77,39 @@ if (args.includes("--telemetry=on")) {
   logger.info("telemetry enabled (anonymous, opt-in)");
 } else if (args.includes("--telemetry=off")) {
   setTelemetryMode("off");
+}
+
+// Transport + port selection. Supports `--flag=value` and `--flag value`.
+function argValue(name: string): string | undefined {
+  const prefix = `--${name}=`;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a.startsWith(prefix)) return a.slice(prefix.length);
+    if (a === `--${name}` && i + 1 < args.length) return args[i + 1];
+  }
+  return undefined;
+}
+
+const transportMode = (argValue("transport") ?? "stdio").toLowerCase();
+if (transportMode !== "stdio" && transportMode !== "http") {
+  process.stderr.write(
+    `[artifacta-mcp] error: invalid --transport=${transportMode}; expected 'stdio' or 'http'\n`
+  );
+  process.exit(2);
+}
+
+// Port: --port flag, else $PORT (Railway injects this), else 8080.
+let httpPort = 8080;
+const portRaw = argValue("port") ?? process.env.PORT;
+if (portRaw !== undefined && portRaw !== "") {
+  const parsed = Number(portRaw);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
+    process.stderr.write(
+      `[artifacta-mcp] error: invalid port '${portRaw}'; expected an integer 1-65535\n`
+    );
+    process.exit(2);
+  }
+  httpPort = parsed;
 }
 
 const config = loadConfig(args);
@@ -117,6 +155,29 @@ process.on("unhandledRejection", (reason) => {
   });
 });
 
+if (transportMode === "http") {
+  // Hosted Streamable HTTP. Per-request `ak_live_` bearer auth (no server key
+  // required); stdio remains the default and is unaffected.
+  const allowedOrigins = (process.env.MCP_ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  startHttpServer({ port: httpPort, config, allowedOrigins })
+    .then((started) => {
+      const shutdown = (): void => {
+        void started.close().finally(() => process.exit(0));
+      };
+      process.on("SIGTERM", shutdown);
+      process.on("SIGINT", shutdown);
+    })
+    .catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[artifacta-mcp] fatal: failed to start HTTP server: ${msg}\n`);
+      process.exit(1);
+    });
+} else {
+
 registerShutdownHandlers(server);
 
 const transport = new StdioServerTransport();
@@ -158,4 +219,6 @@ if (process.env._ARTIFACTA_TEST_INJECT_EXCEPTION === "1") {
   setTimeout(() => {
     throw new Error("test-injected-exception");
   }, 300);
+}
+
 }

@@ -94,6 +94,86 @@ The `-y` flag tells `npx` to skip the install confirmation prompt — required f
 
 After saving, restart the host and confirm the server is connected from the MCP settings panel.
 
+## Hosted MCP (Streamable HTTP)
+
+A hosted endpoint is available at **`https://mcp.artifacta.io/mcp`** so agents can
+use Artifacta without installing this package or running a local process. The
+hosted server is the same TypeScript server, run with `--transport=http`. The
+npm and PyPI stdio packages remain fully supported and are unchanged; the Python
+package is **stdio-only** and does not serve HTTP.
+
+> **Headless / agent-to-agent path.** The hosted endpoint currently accepts a
+> raw `ak_live_` API key as a bearer token. This is the low-cost path for CI,
+> remote agents, and existing users — **not** the standard interactive hosted
+> MCP flow. Interactive OAuth 2.1 consent for desktop clients (Claude Desktop,
+> Cursor) is a separate, later phase. API keys are full-access, so all tools are
+> exposed; per-scope gating arrives with OAuth.
+
+### Endpoint contract
+
+| Request | Result |
+|---------|--------|
+| `POST /mcp` | JSON-RPC, returns `application/json` (stateless — no `MCP-Session-Id`) |
+| `GET /mcp` | `405 Method Not Allowed` (no long-lived SSE in v1) |
+| `GET /healthz` | `200 {"status":"ok"}` |
+
+Send `Authorization: Bearer <your ak_live_ key>` on every `POST /mcp`. Missing or
+malformed bearer tokens return `401`. Responses carry `Cache-Control: no-store`.
+
+### curl smoke test
+
+These are the exact calls the deployment canary runs green. Read the key from
+the environment — never paste it on the command line.
+
+```bash
+export ARTIFACTA_API_KEY=ak_live_...
+
+# 1. initialize → serverInfo.name == "artifacta"
+curl -s https://mcp.artifacta.io/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Authorization: Bearer $ARTIFACTA_API_KEY" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
+
+# 2. tools/list → array including whoami, list_artifacts
+curl -s https://mcp.artifacta.io/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Authorization: Bearer $ARTIFACTA_API_KEY" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+
+# 3. tools/call whoami → identity, plan, usage
+curl -s https://mcp.artifacta.io/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Authorization: Bearer $ARTIFACTA_API_KEY" \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"whoami","arguments":{}}}'
+```
+
+The `Accept: application/json, text/event-stream` header is what a compliant MCP
+client sends; the SDK requires both media types even though the hosted server
+always responds with `application/json`.
+
+### Self-hosting the HTTP transport
+
+To run the HTTP transport yourself (the hosted deployment uses the bundled
+`Dockerfile`):
+
+```bash
+artifacta-mcp --transport=http --port=8080
+```
+
+| Setting | How to set | Notes |
+|---------|-----------|-------|
+| Transport | `--transport=http` | Default is `stdio`; HTTP is opt-in |
+| Port | `--port=<n>` or `PORT` env | `PORT` is used by the Docker image / Railway |
+| API base URL | `ARTIFACTA_API_URL` | Defaults to `https://api.artifacta.io` |
+| Allowed browser origins | `MCP_ALLOWED_ORIGINS` | Comma-separated exact-match allow-list; a present `Origin` not on the list returns `403`. Absent `Origin` (curl, CI, agents) is allowed. Leave unset for non-browser clients |
+
+Unlike stdio, the HTTP transport does **not** read `ARTIFACTA_API_KEY` from its
+environment — each request supplies its own bearer token, so one server can
+serve many tenants.
+
 ## Troubleshooting
 
 ### `unauthorized` errors on every tool call

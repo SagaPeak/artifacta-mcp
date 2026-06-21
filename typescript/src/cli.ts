@@ -12,7 +12,9 @@ import { isLogLevel, setLogLevel, logger } from "./log/logger.js";
 import { setTelemetryMode } from "./telemetry/emitter.js";
 import { ArtifactaHttpClient } from "./http/client.js";
 import { setHttpClient } from "./http/instance.js";
-import { startHttpServer } from "./http/transport.js";
+import { startHttpServer, DEFAULT_RESOURCE_URI } from "./http/transport.js";
+import type { OAuthVerifier } from "./http/oauth.js";
+import { resolveOAuthConfig } from "./http/oauth-config.js";
 import { registerAllTools, registerAllResources } from "./tools/index.js";
 
 const args = process.argv.slice(2);
@@ -52,6 +54,10 @@ if (args.includes("--help") || args.includes("-h")) {
       "             PORT=<n>                               HTTP port (--transport=http; Railway sets this)",
       "             MCP_ALLOWED_ORIGINS=<a,b>              Comma-separated allowed Origin headers (http)",
       "             MCP_RESOURCE_URI=<url>                 Canonical OAuth resource URI (http; default mcp.artifacta.io/mcp)",
+      "             SUPABASE_JWKS_URL=<url>                Supabase JWKS endpoint; set to enable OAuth JWT validation (http)",
+      "             MCP_OAUTH_CLIENT_ID=<id>               Registered MCP OAuth client_id; OAuth tokens must match it (http; required with OAuth)",
+      "             ARTIFACTA_INTERNAL_API_URL=<url>       Private internal API base for OAuth-backed calls (http; required with OAuth)",
+      "             MCP_INTERNAL_SECRET=<secret>           Shared secret for the internal API path (http; required with OAuth)",
       "",
     ].join("\n")
   );
@@ -167,8 +173,53 @@ if (transportMode === "http") {
   // AG-05: canonical resource identifier for OAuth metadata / challenges. The
   // transport defaults this when unset, so omit the field rather than passing "".
   const resourceUri = process.env.MCP_RESOURCE_URI?.trim() || undefined;
+  // The OAuth audience must equal the resource id (default included).
+  const resourceUriValue = resourceUri ?? DEFAULT_RESOURCE_URI;
 
-  startHttpServer({ port: httpPort, config, allowedOrigins, resourceUri })
+  // AG-07: enable OAuth JWT validation when a JWKS URL is configured. The
+  // `ak_live_` headless path stays available regardless; OAuth is additive.
+  // OAuth-backed calls go through the PRIVATE internal API (AG-06) — the public
+  // `ARTIFACTA_API_URL` keeps serving `ak_live_` traffic (dual-URL by design).
+  //
+  // resolveOAuthConfig fails the deploy fast (rather than 500 per request, or —
+  // worse — leaking the internal secret) when OAuth is enabled but: the internal
+  // path is missing, the client binding (MCP_OAUTH_CLIENT_ID) is missing, or the
+  // internal origin equals the public origin.
+  const oauthRes = resolveOAuthConfig({
+    jwksUrl: process.env.SUPABASE_JWKS_URL,
+    internalApiUrl: process.env.ARTIFACTA_INTERNAL_API_URL,
+    internalSecret: process.env.MCP_INTERNAL_SECRET,
+    clientId: process.env.MCP_OAUTH_CLIENT_ID,
+    publicApiUrl: config.apiUrl,
+    audience: resourceUriValue,
+  });
+
+  let oauthVerifier: OAuthVerifier | undefined;
+  let internalApiUrl: string | undefined;
+  let internalSecret: string | undefined;
+  if (oauthRes.enabled) {
+    if ("errors" in oauthRes) {
+      process.stderr.write(
+        "[artifacta-mcp] fatal: SUPABASE_JWKS_URL is set (OAuth enabled) but the OAuth configuration is incomplete or unsafe:\n" +
+          oauthRes.errors.map((e) => `  - ${e}`).join("\n") +
+          "\nSet the above, or unset SUPABASE_JWKS_URL to run ak_live_-only.\n"
+      );
+      process.exit(2);
+    }
+    oauthVerifier = oauthRes.config.verifier;
+    internalApiUrl = oauthRes.config.internalApiUrl;
+    internalSecret = oauthRes.config.internalSecret;
+  }
+
+  startHttpServer({
+    port: httpPort,
+    config,
+    allowedOrigins,
+    resourceUri,
+    oauthVerifier,
+    internalApiUrl,
+    internalSecret,
+  })
     .then((started) => {
       const shutdown = (): void => {
         void started.close().finally(() => process.exit(0));

@@ -11,23 +11,21 @@
 // store when it is present and fall back to their module-level singletons when it
 // is not — so the stdio path is completely unchanged (the store is never set).
 //
-// The Principal shape is deliberately scope-aware so the OAuth work (AG-07) can
-// reuse this plumbing: an OAuth principal will populate `scopes` from validated
-// JWT claims instead of the full set granted to API keys here.
+// The Principal shape is deliberately scope-aware so the OAuth work (AG-07)
+// reuses this plumbing: an OAuthPrincipal populates `scopes` from validated JWT
+// claims instead of the full set granted to API keys here.
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ArtifactaHttpClient } from "./client.js";
 
-export const SCOPE_READ = "artifacts:read";
-export const SCOPE_WRITE = "artifacts:write";
-export const SCOPE_DESTROY = "artifacts:destroy";
-
-/** Full access — what an `ak_live_` API key grants (parity with stdio). */
-export const FULL_SCOPES: readonly string[] = [
+// Scope constants live in safety/scopes.ts (the authz module server.ts also
+// imports). Re-exported here so existing http-layer imports are unchanged.
+export {
   SCOPE_READ,
   SCOPE_WRITE,
   SCOPE_DESTROY,
-];
+  FULL_SCOPES,
+} from "../safety/scopes.js";
 
 /** A raw `ak_live_` bearer, forwarded verbatim to api.artifacta.io. Full scope. */
 export interface ApiKeyPrincipal {
@@ -37,8 +35,22 @@ export interface ApiKeyPrincipal {
   scopes: readonly string[];
 }
 
-// Phase 0 has one principal kind; Phase 1 (AG-07) adds an OAuth principal.
-export type Principal = ApiKeyPrincipal;
+/** A validated Supabase OAuth JWT (AG-07). Calls the REST API through the
+ * internal service path — the JWT is NEVER forwarded — and is gated to its
+ * granted scopes. */
+export interface OAuthPrincipal {
+  kind: "oauth";
+  /** Tenant resolved from the validated `tenant_id` claim. */
+  tenantId: string;
+  /** Granted artifacts:* scopes (the consented subset, NOT hierarchy-expanded).
+   * Forwarded as `X-Artifacta-Scope`; expanded at the gate for tool filtering. */
+  scopes: readonly string[];
+  /** OAuth `client_id` claim — the revocation key (AG-10) and aud-narrowing id. */
+  clientId?: string;
+}
+
+// Phase 0 had one principal kind; Phase 1 (AG-07) adds the OAuth principal.
+export type Principal = ApiKeyPrincipal | OAuthPrincipal;
 
 export interface RequestContext {
   principal: Principal;

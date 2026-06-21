@@ -26,6 +26,22 @@ const READ_TIMEOUT_MS = 60_000;
 const POOL_CONNECTIONS = 10;
 const POOL_IDLE_TIMEOUT_MS = 30_000;
 
+/**
+ * Internal-API authentication for OAuth-backed requests (AG-06 / AG-07). When
+ * present, the client authenticates to the *internal* API with the cross-tenant
+ * `MCP_INTERNAL_SECRET` plus tenant/scope headers instead of an `ak_live_` key —
+ * and the Supabase JWT is NEVER forwarded. `ak_live_` requests leave this unset
+ * and forward the API key exactly as before.
+ */
+export interface InternalAuth {
+  /** `MCP_INTERNAL_SECRET` — sent as the Bearer credential. NEVER logged. */
+  secret: string;
+  /** Tenant the OAuth request acts for (`X-Artifacta-Tenant-Id`). */
+  tenantId: string;
+  /** Space-separated granted scopes (`X-Artifacta-Scope`); may be empty. */
+  scope: string;
+}
+
 // One pool per origin, created lazily.
 const pools = new Map<string, Pool>();
 
@@ -46,12 +62,14 @@ export class ArtifactaHttpClient {
   private config: Config;
   private origin: string;
   private userAgent: string;
+  private readonly internalAuth?: InternalAuth;
 
-  constructor(config: Config) {
+  constructor(config: Config, internalAuth?: InternalAuth) {
     this.config = config;
     const url = new URL(config.apiUrl);
     this.origin = url.origin;
     this.userAgent = `artifacta-mcp/${VERSION} (node/${process.version})`;
+    this.internalAuth = internalAuth;
   }
 
   /** Update config (e.g., after a key change — config is fixed at start but tests swap it). */
@@ -158,7 +176,15 @@ export class ArtifactaHttpClient {
       "User-Agent": this.userAgent,
     };
 
-    if (this.config.apiKey) {
+    if (this.internalAuth) {
+      // OAuth path: authenticate to the internal API with the cross-tenant
+      // secret + tenant/scope headers. The Supabase JWT is never forwarded.
+      headers["Authorization"] = `Bearer ${this.internalAuth.secret}`;
+      headers["X-Artifacta-Tenant-Id"] = this.internalAuth.tenantId;
+      if (this.internalAuth.scope) {
+        headers["X-Artifacta-Scope"] = this.internalAuth.scope;
+      }
+    } else if (this.config.apiKey) {
       headers["Authorization"] = `Bearer ${this.config.apiKey}`;
     }
 

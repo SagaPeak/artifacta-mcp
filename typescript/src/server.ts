@@ -8,6 +8,7 @@ import {
   CallToolRequestSchema,
   McpError,
   ErrorCode,
+  type CallToolResult,
 } from "@modelcontextprotocol/sdk/types.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -17,6 +18,12 @@ import { performance } from "node:perf_hooks";
 import type { Config } from "./config.js";
 import type { SafetyFlags } from "./safety/flags.js";
 import { getFilteredTools, getToolRegistration, isCallPermitted } from "./safety/registry.js";
+import {
+  SCOPE_READ,
+  isToolGranted,
+  requiredScopeForTool,
+  hasResourceAccess,
+} from "./safety/scopes.js";
 import { emitDestructiveAudit } from "./safety/audit.js";
 import {
   listResources,
@@ -44,6 +51,11 @@ class ArtifactaServer extends Server {
     allowDestructive: false,
     writeConfirmRequired: false,
   };
+  // OAuth scope gate (AG-07). `null` = no OAuth gating (stdio + `ak_live_`, both
+  // full-access). When set, it is the principal's hierarchy-EXPANDED granted
+  // scopes, and it is the sole authority over tool/resource visibility for that
+  // request — see wireHandlers.
+  private _scopeGate: ReadonlySet<string> | null = null;
 
   setConfig(config: Config): void {
     this._config = config;
@@ -60,6 +72,34 @@ class ArtifactaServer extends Server {
   getSafetyFlags(): SafetyFlags {
     return this._safetyFlags;
   }
+
+  setScopeGate(expandedScopes: ReadonlySet<string> | null): void {
+    this._scopeGate = expandedScopes;
+  }
+
+  getScopeGate(): ReadonlySet<string> | null {
+    return this._scopeGate;
+  }
+}
+
+/** Tool-execution error for an out-of-scope OAuth call. Per the spec this is a
+ * tool execution error NAMING the missing scope — not a silent drop / "unknown
+ * tool" — so the caller knows exactly which grant to request. */
+function scopeDeniedResult(name: string, requiredScope: string | undefined): CallToolResult {
+  const scope = requiredScope ?? SCOPE_READ;
+  return {
+    content: [
+      {
+        type: "text",
+        text:
+          `Tool '${name}' requires the '${scope}' OAuth scope, which this ` +
+          `access token was not granted. Re-authorize with the '${scope}' ` +
+          `scope to use it.`,
+      },
+    ],
+    isError: true,
+    _meta: { code: "insufficient_scope" },
+  };
 }
 
 const SERVER_INFO = { name: "artifacta", version: VERSION };
@@ -84,13 +124,20 @@ function wireHandlers(srv: ArtifactaServer): void {
     const caps = srv.getClientCapabilities();
     const flags = srv.getSafetyFlags();
     const hasConfirmations = !!caps?.experimental?.["confirmations"];
-    return {
-      tools: getFilteredTools({
-        hasConfirmations,
-        allowDestructive: flags.allowDestructive,
-        writeConfirmRequired: flags.writeConfirmRequired,
-      }),
-    };
+    const tools = getFilteredTools({
+      hasConfirmations,
+      allowDestructive: flags.allowDestructive,
+      writeConfirmRequired: flags.writeConfirmRequired,
+    });
+    // AG-07: under an OAuth scope gate, hide tools the token does not grant.
+    // The HTTP transport sets allowDestructive=true for OAuth principals so the
+    // confirmation-based filter above never pre-hides a destructive tool before
+    // this scope filter runs — the gate is the single authority.
+    const gate = srv.getScopeGate();
+    if (gate) {
+      return { tools: tools.filter((t) => isToolGranted(t.name, gate)) };
+    }
+    return { tools };
   });
 
   srv.setRequestHandler(CallToolRequestSchema, async (req) => {
@@ -102,6 +149,16 @@ function wireHandlers(srv: ArtifactaServer): void {
     const caps = srv.getClientCapabilities();
     const flags = srv.getSafetyFlags();
     const hasConfirmations = !!caps?.experimental?.["confirmations"];
+
+    // AG-07: an OAuth scope gate is checked first so an out-of-scope direct call
+    // returns a tool-execution error NAMING the missing scope (not a silent
+    // MethodNotFound). For a destroy-scoped OAuth token the gate passes and the
+    // standard destructive gate below applies (allowDestructive is true on the
+    // HTTP OAuth path, so it passes too).
+    const gate = srv.getScopeGate();
+    if (gate && !isToolGranted(name, gate)) {
+      return scopeDeniedResult(name, requiredScopeForTool(name));
+    }
 
     // Enforce the same gate as tools/list: block direct calls to destructive tools
     // when the client has no confirmation surface and --allow-destructive was not set.
@@ -162,6 +219,12 @@ function wireHandlers(srv: ArtifactaServer): void {
   registerSetLevelHandler(srv);
 
   srv.setRequestHandler(ListResourcesRequestSchema, async () => {
+    // AG-07: all resources require the read scope. An OAuth token without it
+    // (only possible for an empty/garbage grant) sees no resources.
+    const gate = srv.getScopeGate();
+    if (gate && !hasResourceAccess(gate)) {
+      return { resources: [] };
+    }
     // Static resources (always present) + dynamic recent-artifact enumeration
     // per plan §3. The recent-artifact call is best-effort: a transient API
     // failure must not break resources/list — the static surface still serves.
@@ -170,6 +233,13 @@ function wireHandlers(srv: ArtifactaServer): void {
     return { resources: [...statics, ...recent] };
   });
   srv.setRequestHandler(ReadResourceRequestSchema, async (req) => {
+    const gate = srv.getScopeGate();
+    if (gate && !hasResourceAccess(gate)) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `Reading resources requires the '${SCOPE_READ}' OAuth scope, which this access token was not granted.`
+      );
+    }
     const uri = req.params.uri;
     const exact = getResourceReader(uri);
     if (exact) return exact(uri);
@@ -177,9 +247,13 @@ function wireHandlers(srv: ArtifactaServer): void {
     if (tmpl) return tmpl.read(uri, tmpl.params);
     throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${uri}`);
   });
-  srv.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
-    resourceTemplates: listResourceTemplates(),
-  }));
+  srv.setRequestHandler(ListResourceTemplatesRequestSchema, async () => {
+    const gate = srv.getScopeGate();
+    if (gate && !hasResourceAccess(gate)) {
+      return { resourceTemplates: [] };
+    }
+    return { resourceTemplates: listResourceTemplates() };
+  });
   srv.setRequestHandler(ListPromptsRequestSchema, async () => ({
     prompts: [],
   }));

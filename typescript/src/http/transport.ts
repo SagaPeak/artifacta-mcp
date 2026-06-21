@@ -30,6 +30,8 @@ import { createArtifactaServer } from "../server.js";
 import { logger } from "../log/logger.js";
 import { ArtifactaHttpClient } from "./client.js";
 import { resolvePrincipal } from "./auth.js";
+import type { OAuthVerifier } from "./oauth.js";
+import { expandScopes } from "../safety/scopes.js";
 import {
   runWithRequestContext,
   SCOPE_READ,
@@ -47,7 +49,8 @@ const MAX_BODY_BYTES = 32 * 1024 * 1024;
 // spec's `resource` parameter). Carries the `/mcp` path. The protected-resource
 // metadata document, by contrast, lives at the host root (see WELL_KNOWN_PATH);
 // hosted-mcp.md line 67 pins the literal challenge URL to the root form.
-const DEFAULT_RESOURCE_URI = "https://mcp.artifacta.io/mcp";
+// Exported so cli.ts can use the same default as the OAuth audience.
+export const DEFAULT_RESOURCE_URI = "https://mcp.artifacta.io/mcp";
 
 // RFC 9728 fixed location, served from the resource's origin (not under /mcp).
 const WELL_KNOWN_PATH = "/.well-known/oauth-protected-resource";
@@ -80,6 +83,16 @@ export interface HttpServerOptions {
    * OAuth challenges advertise and what the protected-resource metadata reports.
    * Defaults to {@link DEFAULT_RESOURCE_URI}; cli.ts threads `MCP_RESOURCE_URI`. */
   resourceUri?: string;
+  /** AG-07: validates Supabase OAuth JWTs. When omitted, OAuth is disabled and
+   * only `ak_live_` bearers are accepted (a non-`ak_live_` bearer → 401). */
+  oauthVerifier?: OAuthVerifier;
+  /** Internal API base URL for OAuth-backed calls (the private AG-06 app). The
+   * Supabase JWT is NEVER sent here; the internal secret + tenant/scope headers
+   * authenticate instead. Required when `oauthVerifier` is set. */
+  internalApiUrl?: string;
+  /** `MCP_INTERNAL_SECRET` shared with the internal API. Required when
+   * `oauthVerifier` is set. NEVER logged. */
+  internalSecret?: string;
 }
 
 export interface StartedHttpServer {
@@ -162,8 +175,12 @@ async function handleMcpPost(
     return;
   }
 
-  // AG-02: resolve the `ak_live_` bearer. The token itself is never logged.
-  const principal = resolvePrincipal(headerValue(req.headers.authorization));
+  // AG-02/AG-07: resolve the bearer — `ak_live_` shape first, else (when
+  // configured) a validated Supabase OAuth JWT. The token itself is never logged.
+  const principal = await resolvePrincipal(
+    headerValue(req.headers.authorization),
+    opts.oauthVerifier
+  );
   if (!principal) {
     // AG-05: OAuth-capable clients arriving without (or with a non-`ak_live_`)
     // bearer get an RFC 9728 challenge pointing at the protected-resource
@@ -224,35 +241,67 @@ async function handleMcpPost(
   // Node wrapper rebuilds the Web Request from `rawHeaders`, so both must be set.
   setAcceptHeader(req, "application/json, text/event-stream");
 
-  await dispatch(req, res, parsedBody, principal, opts.config);
+  await dispatch(req, res, parsedBody, principal, opts);
 }
 
 /** Mint a request-scoped server/client/transport, then dispatch under the
- * principal's AsyncLocalStorage context. */
+ * principal's AsyncLocalStorage context. Branches on principal kind:
+ *  - `ak_live_`: forward the API key to the PUBLIC API, full tool access.
+ *  - OAuth: call the INTERNAL API with the cross-tenant secret + tenant/scope
+ *    headers (the JWT is never forwarded), and gate tools to granted scopes. */
 async function dispatch(
   req: IncomingMessage,
   res: ServerResponse,
   parsedBody: unknown,
   principal: Principal,
-  baseConfig: Config
+  opts: HttpServerOptions
 ): Promise<void> {
-  // Per-request HTTP client carries this principal's key; the Authorization
-  // header it sends to api.artifacta.io is exactly `Bearer <ak_live_...>`, with
-  // no internal service headers (AG-02 / the spec's no-passthrough exemption).
-  const requestConfig: Config = {
-    apiKey: principal.token,
-    apiUrl: baseConfig.apiUrl,
-  };
-  const httpClient = new ArtifactaHttpClient(requestConfig);
+  let requestConfig: Config;
+  let httpClient: ArtifactaHttpClient;
+  let scopeGate: ReadonlySet<string> | null = null;
+  let allowDestructive: boolean;
+
+  if (principal.kind === "api_key") {
+    // Per-request client carries this principal's key; the Authorization header
+    // it sends to api.artifacta.io is exactly `Bearer <ak_live_...>`, with no
+    // internal service headers (AG-02 / the spec's no-passthrough exemption).
+    requestConfig = { apiKey: principal.token, apiUrl: opts.config.apiUrl };
+    httpClient = new ArtifactaHttpClient(requestConfig);
+    // API keys are full-access (parity with stdio --allow-destructive); no scope
+    // gate. FULL_SCOPES includes destroy, so this is true.
+    allowDestructive = principal.scopes.includes(SCOPE_DESTROY);
+  } else {
+    // OAuth: fail closed if the internal path is not configured — the JWT must
+    // never reach the public API, so there is nowhere safe to call. (cli.ts also
+    // refuses to start in this state; this is per-request defense in depth.)
+    if (!opts.internalApiUrl || !opts.internalSecret) {
+      logger.error("oauth request received but internal API path is unconfigured");
+      sendJson(res, 500, {
+        error: { code: "server_error", message: "OAuth upstream not configured", status: 500 },
+      });
+      return;
+    }
+    requestConfig = { apiKey: undefined, apiUrl: opts.internalApiUrl };
+    httpClient = new ArtifactaHttpClient(requestConfig, {
+      secret: opts.internalSecret,
+      tenantId: principal.tenantId,
+      // Forward the granted scopes verbatim (X-Artifacta-Scope); the internal
+      // API gates its destructive routes on artifacts:destroy.
+      scope: principal.scopes.join(" "),
+    });
+    // The scope gate is the SOLE authority over OAuth tool/resource visibility.
+    // Keep the confirmation-based destructive filter open (allowDestructive=true)
+    // so it never pre-hides a destroy-scoped tool before the gate runs.
+    scopeGate = expandScopes(principal.scopes);
+    allowDestructive = true;
+  }
 
   const mcpServer = createArtifactaServer();
   mcpServer.setConfig(requestConfig);
+  mcpServer.setScopeGate(scopeGate);
   // Stateless JSON mode never replays the client's `initialize`, so a fresh
   // per-request server always reports no client capabilities — confirmation
   // gating and the requiresConfirmation _meta are therefore inert over HTTP.
-  // A full-scope API key restores full tool visibility (API keys are
-  // full-access, matching stdio with --allow-destructive). OAuth principals
-  // (AG-07) will instead gate destructive tools on artifacts:destroy.
   //
   // OPEN_QUESTION (HM-04 security sign-off): tool parity exposes the path-based
   // store_artifact over HTTP, which reads the *container's* filesystem (CWD-
@@ -261,7 +310,7 @@ async function dispatch(
   // sets ARTIFACTA_MCP_ALLOW_PATH, or writes sensitive data to disk. Revisit
   // before public OAuth launch (hide path tools over HTTP, or hard-confine).
   mcpServer.setSafetyFlags({
-    allowDestructive: principal.scopes.includes(SCOPE_DESTROY),
+    allowDestructive,
     writeConfirmRequired: false,
   });
 

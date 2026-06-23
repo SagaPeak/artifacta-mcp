@@ -102,12 +102,24 @@ hosted server is the same TypeScript server, run with `--transport=http`. The
 npm and PyPI stdio packages remain fully supported and are unchanged; the Python
 package is **stdio-only** and does not serve HTTP.
 
-> **Headless / agent-to-agent path.** The hosted endpoint currently accepts a
-> raw `ak_live_` API key as a bearer token. This is the low-cost path for CI,
-> remote agents, and existing users — **not** the standard interactive hosted
-> MCP flow. Interactive OAuth 2.1 consent for desktop clients (Claude Desktop,
-> Cursor) is a separate, later phase. API keys are full-access, so all tools are
-> exposed; per-scope gating arrives with OAuth.
+### Connect with OAuth (standard interactive path)
+
+For interactive clients (Claude Code, Claude Desktop, Cursor), connect by URL and
+sign in through your browser — no API key to copy. Claude Code authenticates
+against Artifacta's **public** OAuth client (PKCE, **no client secret**), and you
+choose the tool permissions (read / write / destroy) on a consent screen. Full
+setup, including the `claude mcp add-json` config and the `/mcp` → Authenticate
+flow, is documented here:
+
+**[Connect Claude Code (Hosted)](https://docs.artifacta.io/mcp/install/claude-code-hosted)**
+
+### Headless / CI — `ak_live_` bearer
+
+For unattended agents and CI that cannot run an interactive browser login, the
+hosted endpoint also accepts a raw `ak_live_` API key as a bearer token,
+forwarded to the REST API exactly as stdio does. API keys are full-access, so all
+tools are exposed. This is the **headless / CI-only** path — interactive users
+should use OAuth above.
 
 ### Endpoint contract
 
@@ -120,10 +132,11 @@ package is **stdio-only** and does not serve HTTP.
 Send `Authorization: Bearer <your ak_live_ key>` on every `POST /mcp`. Missing or
 malformed bearer tokens return `401`. Responses carry `Cache-Control: no-store`.
 
-### curl smoke test
+### curl smoke test (headless `ak_live_` path)
 
-These are the exact calls the deployment canary runs green. Read the key from
-the environment — never paste it on the command line.
+These are the exact calls the deployment canary runs green over the headless
+`ak_live_` path. Read the key from the environment — never paste it on the
+command line.
 
 ```bash
 export ARTIFACTA_API_KEY=ak_live_...

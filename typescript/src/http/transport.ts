@@ -34,8 +34,6 @@ import type { OAuthVerifier } from "./oauth.js";
 import { expandScopes } from "../safety/scopes.js";
 import {
   runWithRequestContext,
-  SCOPE_READ,
-  SCOPE_WRITE,
   SCOPE_DESTROY,
   type Principal,
 } from "./request-context.js";
@@ -60,8 +58,12 @@ const WELL_KNOWN_PATH = "/.well-known/oauth-protected-resource";
 const AUTHORIZATION_SERVER =
   "https://vliolvdztzcrtuolrgdi.supabase.co/auth/v1";
 
-// The three MCP OAuth scopes (request-context.ts mirrors these for principals).
-const SCOPES_SUPPORTED = [SCOPE_READ, SCOPE_WRITE, SCOPE_DESTROY] as const;
+// PRM `scopes_supported` lists the scopes the Authorization Server (Supabase
+// Auth) accepts at /authorize. Supabase honors only OIDC scopes and rejects
+// custom `artifacts:*` ("unsupported scope"), so we advertise OIDC scopes only.
+// Artifact tool scopes are granted at consent/hook time (mcp_oauth_grants +
+// access-token hook), not via the authorize `scope` param.
+const SCOPES_SUPPORTED = ["openid", "profile", "email"] as const;
 
 /** Absolute URL of the protected-resource metadata document for `resourceUri`.
  * Per hosted-mcp.md line 67 this is the resource's *origin* + the well-known

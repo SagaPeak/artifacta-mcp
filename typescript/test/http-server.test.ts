@@ -105,11 +105,10 @@ describe("GET /.well-known/oauth-protected-resource (AG-05)", () => {
     expect(body.authorization_servers).toEqual([
       "https://vliolvdztzcrtuolrgdi.supabase.co/auth/v1",
     ]);
-    expect(body.scopes_supported).toEqual([
-      "artifacts:read",
-      "artifacts:write",
-      "artifacts:destroy",
-    ]);
+    // OIDC scopes only — Supabase Auth (the AS) rejects custom artifacts:*
+    // scopes at /authorize. Artifact tool scopes are granted at consent/hook
+    // time, not via the authorize `scope` param.
+    expect(body.scopes_supported).toEqual(["openid", "profile", "email"]);
     expect(body.bearer_methods_supported).toEqual(["header"]);
   });
 

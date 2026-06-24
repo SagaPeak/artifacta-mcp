@@ -527,4 +527,172 @@ describe("AG-07 client binding (finding #2)", () => {
     const t = await mint({ scope: "artifacts:read", clientId: null });
     expect((await postBound(t, 24)).status).toBe(401);
   });
+
+  // AG-DCR-01 hardening: the client_id/azp consistency guard is UNCONDITIONAL —
+  // it fires even in strict (non-DCR) mode, ahead of the expectedClientId match.
+  // client_id == EXPECTED but azp == a different id is ambiguous → 401, NOT a pass.
+  it("rejects a token whose client_id matches but azp differs (ambiguous, even in strict mode)", async () => {
+    const t = await new SignJWT({
+      tenant_id: TENANT,
+      client_id: EXPECTED,
+      azp: "some-other-client",
+      scope: "artifacts:read",
+    })
+      .setProtectedHeader({ alg: "ES256", kid: "test-kid" })
+      .setAudience(AUDIENCE)
+      .setIssuedAt(nowSec())
+      .setExpirationTime(nowSec() + 3600)
+      .sign(keys.privateKey);
+    expect((await postBound(t, 25)).status).toBe(401);
+  });
+});
+
+describe("AG-DCR-02 DCR mode (client binding relaxed to presence + aud)", () => {
+  // With DCR, client ids are per-client and unknown. The verifier accepts ANY
+  // present client_id as long as `aud` == MCP_RESOURCE_URI (enforced by jose) — the
+  // cross-client gate moves to the hook (which stamps aud=MCP only for a recognized
+  // client). A token with no client_id is rejected; a wrong aud is rejected.
+  let dcr: StartedHttpServer;
+
+  beforeAll(async () => {
+    dcr = await startHttpServer({
+      port: 0,
+      config: { apiKey: undefined, apiUrl: publicStub.url },
+      allowedOrigins: [],
+      resourceUri: AUDIENCE,
+      // dcrEnabled relaxes the binding; no expectedClientId is set in DCR mode.
+      oauthVerifier: createOAuthVerifier({
+        keyInput: keys.publicKey,
+        audience: AUDIENCE,
+        dcrEnabled: true,
+      }),
+      internalApiUrl: internalStub.url,
+      internalSecret: INTERNAL_SECRET,
+    });
+  });
+  afterAll(async () => {
+    await dcr.close();
+  });
+
+  function postDcr(token: string, id: number): Promise<Response> {
+    return fetch(`http://127.0.0.1:${dcr.port}/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: `Bearer ${token}` },
+      body: mcpBody("tools/list", {}, id),
+    });
+  }
+
+  it("accepts a token from an arbitrary dynamic client (any present client_id + correct aud)", async () => {
+    const t = await mint({ scope: "artifacts:read", clientId: "dynamic-client-abc123" });
+    expect((await postDcr(t, 30)).status).toBe(200);
+  });
+
+  it("accepts a DIFFERENT dynamic client too (binding is not pinned to one id)", async () => {
+    const t = await mint({ scope: "artifacts:read", clientId: "another-dynamic-client-xyz" });
+    expect((await postDcr(t, 31)).status).toBe(200);
+  });
+
+  it("accepts a token whose client id is carried by azp only", async () => {
+    // azp present, client_id omitted → the verifier reads azp.
+    const withAzp = await new SignJWT({ tenant_id: TENANT, azp: "azp-dynamic-client", scope: "artifacts:read" })
+      .setProtectedHeader({ alg: "ES256", kid: "test-kid" })
+      .setAudience(AUDIENCE)
+      .setIssuedAt(nowSec())
+      .setExpirationTime(nowSec() + 3600)
+      .sign(keys.privateKey);
+    expect((await postDcr(withAzp, 32)).status).toBe(200);
+  });
+
+  it("rejects a token with NO client_id and NO azp (not an OAuth-client token)", async () => {
+    const t = await mint({ scope: "artifacts:read", clientId: null });
+    expect((await postDcr(t, 33)).status).toBe(401);
+  });
+
+  // AG-DCR-01 hardening (adversarial review): an ambiguous token carrying BOTH
+  // client_id AND azp with DIFFERENT values is rejected (the hook would recognize
+  // on one claim while the verifier binds identity/revocation to the other). The
+  // mint() helper only ever sets client_id, so build the JWT inline (as the azp
+  // test does) to carry both claims.
+  it("rejects a token with client_id and azp both present and DIFFERENT (ambiguous → 401)", async () => {
+    const mismatched = await new SignJWT({
+      tenant_id: TENANT,
+      client_id: "dynamic-client-abc123",
+      azp: "a-different-dynamic-client",
+      scope: "artifacts:read",
+    })
+      .setProtectedHeader({ alg: "ES256", kid: "test-kid" })
+      .setAudience(AUDIENCE)
+      .setIssuedAt(nowSec())
+      .setExpirationTime(nowSec() + 3600)
+      .sign(keys.privateKey);
+    expect((await postDcr(mismatched, 38)).status).toBe(401);
+  });
+
+  it("accepts a token with client_id and azp both present and EQUAL (normal Supabase shape → 200)", async () => {
+    const matched = await new SignJWT({
+      tenant_id: TENANT,
+      client_id: "dynamic-client-abc123",
+      azp: "dynamic-client-abc123",
+      scope: "artifacts:read",
+    })
+      .setProtectedHeader({ alg: "ES256", kid: "test-kid" })
+      .setAudience(AUDIENCE)
+      .setIssuedAt(nowSec())
+      .setExpirationTime(nowSec() + 3600)
+      .sign(keys.privateKey);
+    expect((await postDcr(matched, 39)).status).toBe(200);
+  });
+
+  it("rejects a wrong audience even in DCR mode", async () => {
+    const t = await mint({ scope: "artifacts:read", clientId: "dynamic-client-abc123", audience: "https://wrong.example/mcp" });
+    expect((await postDcr(t, 34)).status).toBe(401);
+  });
+
+  it("still grants tools by scope (a dynamic read token sees exactly the 5 read tools)", async () => {
+    const t = await mint({ scope: "artifacts:read", clientId: "dynamic-client-abc123" });
+    const res = await postDcr(t, 35);
+    const body = (await res.json()) as RpcEnvelope<{ tools: Array<{ name: string }> }>;
+    expect(body.result!.tools.map((x) => x.name).sort()).toEqual([...READ_TOOLS].sort());
+  });
+
+  it("prod config (dcrEnabled + expectedClientId both set, parallel support): an arbitrary client still validates", async () => {
+    // Prod runs MCP_OAUTH_CLIENT_ID=<fixed> (kept for the fixed-client OR-branch) AND
+    // MCP_OAUTH_DCR_ENABLED=1. The DCR arm must win — a dynamic client whose id is NOT
+    // the fixed one must still validate (the exact-match check is never reached).
+    const server = await startHttpServer({
+      port: 0,
+      config: { apiKey: undefined, apiUrl: publicStub.url },
+      allowedOrigins: [],
+      resourceUri: AUDIENCE,
+      oauthVerifier: createOAuthVerifier({
+        keyInput: keys.publicKey,
+        audience: AUDIENCE,
+        expectedClientId: "the-fixed-client",
+        dcrEnabled: true,
+      }),
+      internalApiUrl: internalStub.url,
+      internalSecret: INTERNAL_SECRET,
+    });
+    try {
+      const dynamic = await mint({ scope: "artifacts:read", clientId: "some-other-dynamic-client" });
+      expect(
+        (await fetch(`http://127.0.0.1:${server.port}/mcp`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: `Bearer ${dynamic}` },
+          body: mcpBody("tools/list", {}, 36),
+        })).status
+      ).toBe(200);
+      // The fixed client still works too (it just isn't required to match).
+      const fixed = await mint({ scope: "artifacts:read", clientId: "the-fixed-client" });
+      expect(
+        (await fetch(`http://127.0.0.1:${server.port}/mcp`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: `Bearer ${fixed}` },
+          body: mcpBody("tools/list", {}, 37),
+        })).status
+      ).toBe(200);
+    } finally {
+      await server.close();
+    }
+  });
 });

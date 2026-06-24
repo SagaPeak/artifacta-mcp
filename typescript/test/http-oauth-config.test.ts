@@ -93,4 +93,56 @@ describe("resolveOAuthConfig", () => {
     if (!("errors" in res)) throw new Error("expected errors");
     expect(res.errors.length).toBeGreaterThanOrEqual(3);
   });
+
+  // AG-DCR-02 (hardened): DCR relaxes ONLY the verifier's exact client_id match (in
+  // oauth.ts). The env-presence check is unconditional — MCP_OAUTH_CLIENT_ID stays
+  // required even in DCR mode so the fixed-client OR-branch keeps working and rollback
+  // (unset MCP_OAUTH_DCR_ENABLED → strict binding) is instant (no startup failure).
+  // Every other guard (internal path, secret, origin-differ) also stays.
+  describe("DCR mode (MCP_OAUTH_DCR_ENABLED)", () => {
+    // Kept required for instant rollback / parallel support: a missing client id STILL
+    // errors in DCR mode (it would break the fixed-client fallback and make rollback to
+    // strict binding fail startup).
+    it("still requires MCP_OAUTH_CLIENT_ID when DCR is enabled", () => {
+      const res = resolveOAuthConfig({ ...BASE, clientId: undefined, dcrEnabled: true });
+      expect("errors" in res && res.errors.join(" ")).toContain("MCP_OAUTH_CLIENT_ID is required");
+    });
+
+    it("still resolves WITH a client id when DCR is enabled (fixed client may stay set)", () => {
+      const res = resolveOAuthConfig({ ...BASE, dcrEnabled: true });
+      expect(res.enabled && !("errors" in res)).toBe(true);
+    });
+
+    it("still requires the internal API URL in DCR mode", () => {
+      const res = resolveOAuthConfig({ ...BASE, clientId: undefined, internalApiUrl: undefined, dcrEnabled: true });
+      expect("errors" in res && res.errors.join(" ")).toContain("ARTIFACTA_INTERNAL_API_URL is required");
+    });
+
+    it("still requires the internal secret in DCR mode", () => {
+      const res = resolveOAuthConfig({ ...BASE, clientId: undefined, internalSecret: "", dcrEnabled: true });
+      expect("errors" in res && res.errors.join(" ")).toContain("MCP_INTERNAL_SECRET is required");
+    });
+
+    it("still rejects a shared public/internal origin in DCR mode", () => {
+      const res = resolveOAuthConfig({
+        ...BASE,
+        clientId: undefined,
+        internalApiUrl: "https://api.artifacta.io",
+        publicApiUrl: "https://api.artifacta.io",
+        dcrEnabled: true,
+      });
+      expect("errors" in res && res.errors.join(" ")).toContain("must differ from the public");
+    });
+
+    it("non-DCR (default) still errors on missing MCP_OAUTH_CLIENT_ID (regression)", () => {
+      // dcrEnabled omitted → strict binding preserved.
+      const res = resolveOAuthConfig({ ...BASE, clientId: undefined });
+      expect("errors" in res && res.errors.join(" ")).toContain("MCP_OAUTH_CLIENT_ID is required");
+    });
+
+    it("dcrEnabled:false is treated as off (strict binding)", () => {
+      const res = resolveOAuthConfig({ ...BASE, clientId: undefined, dcrEnabled: false });
+      expect("errors" in res && res.errors.join(" ")).toContain("MCP_OAUTH_CLIENT_ID is required");
+    });
+  });
 });

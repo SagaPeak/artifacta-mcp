@@ -55,7 +55,8 @@ if (args.includes("--help") || args.includes("-h")) {
       "             MCP_ALLOWED_ORIGINS=<a,b>              Comma-separated allowed Origin headers (http)",
       "             MCP_RESOURCE_URI=<url>                 Canonical OAuth resource URI (http; default mcp.artifacta.io/mcp)",
       "             SUPABASE_JWKS_URL=<url>                Supabase JWKS endpoint; set to enable OAuth JWT validation (http)",
-      "             MCP_OAUTH_CLIENT_ID=<id>               Registered MCP OAuth client_id; OAuth tokens must match it (http; required with OAuth)",
+      "             MCP_OAUTH_CLIENT_ID=<id>               Registered MCP OAuth client_id; OAuth tokens must match it (http; required with OAuth, including DCR mode — fixed-client fallback + instant rollback)",
+      "             MCP_OAUTH_DCR_ENABLED=1                Accept dynamically-registered OAuth clients (relax client_id binding to client_id-present + MCP aud; http)",
       "             ARTIFACTA_INTERNAL_API_URL=<url>       Private internal API base for OAuth-backed calls (http; required with OAuth)",
       "             MCP_INTERNAL_SECRET=<secret>           Shared secret for the internal API path (http; required with OAuth)",
       "",
@@ -192,6 +193,10 @@ if (transportMode === "http") {
     clientId: process.env.MCP_OAUTH_CLIENT_ID,
     publicApiUrl: config.apiUrl,
     audience: resourceUriValue,
+    // AG-DCR-02: when set, accept dynamically-registered OAuth clients (relax the
+    // exact MCP_OAUTH_CLIENT_ID binding to client_id-present + MCP aud). Default off
+    // keeps the strict single-id binding; this is the instant-rollback switch (§5).
+    dcrEnabled: process.env.MCP_OAUTH_DCR_ENABLED === "1",
   });
 
   let oauthVerifier: OAuthVerifier | undefined;

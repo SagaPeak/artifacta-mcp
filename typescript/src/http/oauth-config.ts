@@ -28,6 +28,19 @@ export interface OAuthEnv {
   publicApiUrl: string;
   /** OAuth audience (the canonical MCP resource URI). */
   audience: string;
+  /**
+   * `MCP_OAUTH_DCR_ENABLED` (AG-DCR-02). When true, dynamically-registered clients
+   * are accepted: the verifier relaxes from exact `clientId` binding to "client_id
+   * present + aud == MCP_RESOURCE_URI" (§3.3 V1). `MCP_OAUTH_CLIENT_ID` REMAINS
+   * required at startup even in DCR mode — DCR relaxes ONLY the verifier's exact-match
+   * (the env-presence check is unconditional). The fixed client always stays configured:
+   * it serves the hook's fixed-client OR-branch (parallel support, §5) and is the
+   * rollback target — unsetting `MCP_OAUTH_DCR_ENABLED` reverts to strict single-id
+   * binding, which needs `MCP_OAUTH_CLIENT_ID` present, so keeping it set is what makes
+   * the rollback instant (no startup failure / MCP outage). Default (false) keeps the
+   * strict AG-07 single-id binding.
+   */
+  dcrEnabled?: boolean;
 }
 
 export interface ResolvedOAuth {
@@ -63,6 +76,7 @@ export function resolveOAuthConfig(env: OAuthEnv): OAuthResolution {
   const internalApiUrl = env.internalApiUrl?.trim() || undefined;
   const internalSecret = env.internalSecret?.trim() || undefined;
   const clientId = env.clientId?.trim() || undefined;
+  const dcrEnabled = env.dcrEnabled === true;
 
   const errors: string[] = [];
   if (!internalApiUrl) {
@@ -75,9 +89,16 @@ export function resolveOAuthConfig(env: OAuthEnv): OAuthResolution {
       "MCP_INTERNAL_SECRET is required — shared with the internal API service"
     );
   }
+  // MCP_OAUTH_CLIENT_ID is ALWAYS required when OAuth is enabled — including DCR mode.
+  // It binds tokens to the registered MCP OAuth client (non-DCR), serves the hook's
+  // fixed-client OR-branch (parallel support during the DCR transition, §5), and is the
+  // rollback target: unsetting MCP_OAUTH_DCR_ENABLED reverts to strict single-id binding,
+  // which requires this value present, so keeping it set is what makes rollback instant
+  // (no startup failure). DCR relaxation belongs ONLY in the verifier (it ignores
+  // expectedClientId when dcrEnabled) — NOT here. So the presence check is unconditional.
   if (!clientId) {
     errors.push(
-      "MCP_OAUTH_CLIENT_ID is required — binds tokens to the registered MCP OAuth client; without it a token minted by ANY OAuth client of the same Supabase project that carries the MCP audience would be accepted"
+      "MCP_OAUTH_CLIENT_ID is required — binds tokens to the registered MCP OAuth client; without it a token minted by ANY OAuth client of the same Supabase project that carries the MCP audience would be accepted. It stays required in DCR mode too (MCP_OAUTH_DCR_ENABLED): the fixed client serves the hook fixed-client fallback and is the instant-rollback target — unsetting the DCR flag reverts to strict binding, which needs this value present"
     );
   }
   if (internalApiUrl) {
@@ -97,6 +118,7 @@ export function resolveOAuthConfig(env: OAuthEnv): OAuthResolution {
     jwksUrl,
     audience: env.audience,
     expectedClientId: clientId,
+    dcrEnabled,
   });
   return {
     enabled: true,

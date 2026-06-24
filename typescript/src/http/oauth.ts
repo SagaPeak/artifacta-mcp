@@ -42,6 +42,17 @@ export interface OAuthVerifierConfig {
   /** When set, the token's `client_id` (or `azp`) must equal this — the AG-08
    * follow-up to narrow the MCP audience to a known client. Unset = `aud` only. */
   expectedClientId?: string;
+  /**
+   * AG-DCR-02 (Dynamic Client Registration, §3.3 V1). When true, client ids are
+   * per-client and unknown ahead of time, so exact-id matching is impossible.
+   * Relax `expectedClientId` to "a `client_id`/`azp` claim is PRESENT" and trust
+   * `aud` (already enforced to MCP_RESOURCE_URI above): the hook stamps the MCP
+   * `aud` ONLY for a grant-backed/fixed client and base GoTrue never sets it on
+   * its own (HM-DCR-01 spike), so a signature-valid MCP-aud token can only have
+   * come from a hook-recognized client. Default (false) keeps the strict AG-07
+   * single-id binding for non-DCR deploys.
+   */
+  dcrEnabled?: boolean;
 }
 
 export interface OAuthVerifier {
@@ -87,6 +98,25 @@ export function createOAuthVerifier(cfg: OAuthVerifierConfig): OAuthVerifier {
         return null;
       }
 
+      // AG-DCR-01 hardening (adversarial review): a token's OAuth client id is
+      // derived from two claims, `client_id` and `azp`. In a normal Supabase flow
+      // GoTrue sets client_id == azp, so they never disagree. If a token carries
+      // BOTH with DIFFERENT values it is AMBIGUOUS: the COALESCE below would bind
+      // identity (and the AG-10 revocation key) to `client_id`, while the token
+      // hook may have recognized/enriched it on `azp` (e.g. azp == the fixed id) —
+      // breaking per-client grant isolation and revocation. Fail closed (401) for
+      // the same shape the hook treats as NOT an MCP client. Applies in BOTH DCR
+      // and non-DCR modes; the consistency guard is unconditional. Log only the
+      // failure class — NEVER claim values.
+      if (
+        typeof payload.client_id === "string" &&
+        typeof payload.azp === "string" &&
+        payload.client_id !== payload.azp
+      ) {
+        logger.warning("oauth token client_id/azp mismatch");
+        return null;
+      }
+
       const clientId =
         typeof payload.client_id === "string"
           ? payload.client_id
@@ -94,17 +124,30 @@ export function createOAuthVerifier(cfg: OAuthVerifierConfig): OAuthVerifier {
             ? payload.azp
             : undefined;
 
-      // Client binding (AG-08 follow-up). The Supabase token hook mints the MCP
-      // `aud` for ANY OAuth flow that carries a `client_id`, so `aud` alone does
-      // NOT prove the token came from the registered MCP client — a token from a
-      // different OAuth client of the same Supabase project would otherwise be
-      // accepted with its scopes (cross-client substitution). When
-      // `expectedClientId` is set we require an exact match, which also rejects a
-      // token that omits `client_id` (undefined !== expected). Production makes
-      // this mandatory: `resolveOAuthConfig` (oauth-config.ts) refuses to enable
-      // OAuth without `MCP_OAUTH_CLIENT_ID`. It stays optional on the injectable
-      // verifier only so unit tests can exercise the JWT mechanics in isolation.
-      if (
+      // Client binding (AG-08 follow-up; AG-DCR-02 DCR mode). The Supabase token
+      // hook mints the MCP `aud` only for a client it recognizes — for ANY OAuth
+      // flow carrying the fixed `client_id` (Phase 2) or, after AG-DCR-01, a client
+      // backed by a non-revoked consent grant. Base GoTrue never sets aud=MCP on
+      // its own (HM-DCR-01 spike).
+      //
+      //  - Non-DCR (default): `expectedClientId` is set and exact match is required,
+      //    which also rejects a token that omits `client_id` (undefined !== expected).
+      //    A token minted by a DIFFERENT OAuth client of the same project that
+      //    carried the MCP audience would otherwise be accepted (cross-client
+      //    substitution). Production makes this mandatory: `resolveOAuthConfig`
+      //    refuses to enable OAuth without `MCP_OAUTH_CLIENT_ID`.
+      //  - DCR mode (`dcrEnabled`): client ids are per-client and unknown, so exact
+      //    match is impossible. Relax to "client_id/azp PRESENT" — the
+      //    cross-client-substitution defense moves to the hook (it stamps aud=MCP
+      //    only for a recognized client), and jose already enforced aud above, so a
+      //    signature-valid MCP-aud token can only have come from a hook-recognized
+      //    client. A token with no client id is not an OAuth-client token → reject.
+      if (cfg.dcrEnabled) {
+        if (!clientId) {
+          logger.warning("oauth token missing client_id claim (DCR mode)");
+          return null;
+        }
+      } else if (
         cfg.expectedClientId !== undefined &&
         clientId !== cfg.expectedClientId
       ) {
@@ -136,11 +179,13 @@ export function createRemoteOAuthVerifier(opts: {
   jwksUrl: string;
   audience: string;
   expectedClientId?: string;
+  dcrEnabled?: boolean;
 }): OAuthVerifier {
   const jwks = createRemoteJWKSet(new URL(opts.jwksUrl));
   return createOAuthVerifier({
     keyInput: jwks,
     audience: opts.audience,
     expectedClientId: opts.expectedClientId,
+    dcrEnabled: opts.dcrEnabled,
   });
 }

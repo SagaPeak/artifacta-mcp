@@ -105,11 +105,12 @@ package is **stdio-only** and does not serve HTTP.
 ### Connect with OAuth (standard interactive path)
 
 For interactive clients (Claude Code, Claude Desktop, Cursor), connect by URL and
-sign in through your browser — no API key to copy. Claude Code authenticates
-against Artifacta's **public** OAuth client (PKCE, **no client secret**), and you
-choose the tool permissions (read / write / destroy) on a consent screen. Full
-setup, including the `claude mcp add-json` config and the `/mcp` → Authenticate
-flow, is documented here:
+sign in through your browser — no API key to copy. The one-liner
+`claude mcp add --transport http artifacta https://mcp.artifacta.io/mcp` self-registers
+a public OAuth client via Dynamic Client Registration (PKCE, **no client secret**);
+a fixed-`clientId` `add-json` form is the manual fallback. You choose the tool
+permissions (read / write / destroy) on a consent screen. Full setup, including
+both forms and the `/mcp` → Authenticate flow, is documented here:
 
 **[Connect Claude Code (Hosted)](https://docs.artifacta.io/mcp/install/claude-code-hosted)**
 

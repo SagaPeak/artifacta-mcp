@@ -1,12 +1,12 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.artifacta/mcp",
-  "description": "Artifact store for AI agents — persist, list, hand off run outputs with session metadata and dedup.",
+  "description": "Artifact store for AI agents. Hosted OAuth at mcp.artifacta.io/mcp; local stdio via npm/PyPI.",
   "repository": {
     "url": "https://github.com/SagaPeak/artifacta-mcp",
     "source": "github"
   },
-  "version": "1.0.3",
+  "version": "1.0.4",
   "remotes": [
     {
       "type": "streamable-http",

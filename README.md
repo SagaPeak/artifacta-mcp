@@ -23,7 +23,21 @@ path-confinement engine:
 
 ## Quick start
 
-Get an API key at [app.artifacta.io/dashboard/keys](https://app.artifacta.io/dashboard/keys),
+The fastest way to connect is the hosted server — no install, no API key:
+
+```bash
+claude mcp add --transport http artifacta https://mcp.artifacta.io/mcp
+```
+
+On first use your client self-registers via OAuth Dynamic Client Registration
+(PKCE) and opens a browser to authorize — no `ak_live_` key to copy or store.
+See the [hosted setup guide](https://docs.artifacta.io/mcp/install/claude-code-hosted).
+
+### Local / CI (stdio)
+
+For headless, air-gapped, or CI environments where a browser OAuth flow isn't
+available, run the package locally over stdio with an API key. Get a key at
+[app.artifacta.io/dashboard/keys](https://app.artifacta.io/dashboard/keys),
 then add to your MCP client config (Claude Desktop, Claude Code, Cursor, or any
 MCP client):
 

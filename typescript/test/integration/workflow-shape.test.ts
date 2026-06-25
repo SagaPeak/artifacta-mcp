@@ -95,8 +95,8 @@ describe("AF_MCP-7.2 scaffolding — workflow + file shape", () => {
     const src = readFileSync(path, "utf8");
     expect(src).toContain("export type Transport");
     expect(src).toContain("TRANSPORTS");
-    // Confirms env-var override path: future SSE phase passes
-    // `ARTIFACTA_MCP_INTEGRATION_TRANSPORTS=sse` without code change.
+    // Confirms env-var override path: an http run passes
+    // `ARTIFACTA_MCP_INTEGRATION_TRANSPORTS=http` without code change.
     expect(src).toContain("ARTIFACTA_MCP_INTEGRATION_TRANSPORTS");
   });
 });

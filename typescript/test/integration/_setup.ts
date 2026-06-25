@@ -26,10 +26,12 @@ export function hasStaging(): boolean {
   return typeof STAGING_KEY === "string" && STAGING_KEY.length > 0;
 }
 
-// Plan §7 Phase 1 ships stdio only; Phase 4 adds SSE. The integration
-// scaffolding is parameterized by transport so when SSE lands the same
-// suites re-run by overriding `ARTIFACTA_MCP_INTEGRATION_TRANSPORTS=sse`.
-export type Transport = "stdio" | "sse";
+// Two transports matter: `stdio` (the local stdio package, also the path
+// staging exercises) and `http` (hosted Streamable HTTP). The integration
+// scaffolding is parameterized by transport so a run can target either by
+// overriding `ARTIFACTA_MCP_INTEGRATION_TRANSPORTS=http`. The live hosted
+// endpoint itself is exercised by a separate `hosted-canary` CI job.
+export type Transport = "stdio" | "http";
 export const DEFAULT_TRANSPORTS: readonly Transport[] = ["stdio"];
 
 export const TRANSPORTS: readonly Transport[] = ((): readonly Transport[] => {

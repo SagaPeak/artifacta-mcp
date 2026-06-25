@@ -22,7 +22,10 @@ import { hasStaging, STAGING_KEY, STAGING_API_URL } from "./_setup.js";
 
 const STAGING = hasStaging();
 
-beforeAll(() => {
+// Resolved once in beforeAll: an artifact id the get_* happy paths can read.
+let fixtureId: string | undefined;
+
+beforeAll(async () => {
   if (!STAGING) return;
   clearRegistry();
   clearResourceRegistry();
@@ -34,6 +37,12 @@ beforeAll(() => {
       apiUrl: STAGING_API_URL,
     })
   );
+  // A static pinned fixture (ARTIFACTA_STAGING_FIXTURE_ARTIFACT_ID) rots once the
+  // artifact TTL-expires or is hard-deleted (the original cause of the 2 nightly
+  // failures). Validate the pin if set, otherwise fall back to the freshest
+  // artifact from list_artifacts so the suite never rots — it now skips the
+  // get_* cases only when the tenant genuinely has no artifacts.
+  fixtureId = await resolveFixtureId();
 });
 
 afterAll(() => {
@@ -55,6 +64,25 @@ async function callTool(name: string, args: Record<string, unknown> = {}): Promi
   return result as TextResult;
 }
 
+// Resolve an artifact id the get_* cases can read. Prefer an explicitly pinned
+// fixture if it STILL resolves; otherwise use the newest artifact the tenant
+// actually has (list returns created_at DESC). Returns undefined only when the
+// tenant has no artifacts at all (→ the get_* cases skip, not fail).
+async function resolveFixtureId(): Promise<string | undefined> {
+  const pinned = process.env.ARTIFACTA_STAGING_FIXTURE_ARTIFACT_ID;
+  if (pinned) {
+    const r = await callTool("get_artifact", { artifact_id: pinned });
+    if (!(r.isError ?? false)) return pinned; // pin still valid
+    // else: pin rotted (TTL-expired / hard-deleted) — fall back to a live one.
+  }
+  const list = await callTool("list_artifacts");
+  if (list.isError ?? false) return undefined;
+  const body = JSON.parse(list.content[0].text) as {
+    artifacts?: Array<{ artifact_id?: string }>;
+  };
+  return body.artifacts?.[0]?.artifact_id;
+}
+
 describe.skipIf(!STAGING)(
   "AF_MCP-7.2.03 — per-tool happy paths against staging [needs-staging]",
   () => {
@@ -74,9 +102,8 @@ describe.skipIf(!STAGING)(
       expect(Array.isArray(body.artifacts)).toBe(true);
     });
 
-    it("get_artifact resolves a known fixture id (skips when fixture missing)", async () => {
-      const fixtureId = process.env.ARTIFACTA_STAGING_FIXTURE_ARTIFACT_ID;
-      if (!fixtureId) return; // [needs-fixture: ARTIFACTA_STAGING_FIXTURE_ARTIFACT_ID]
+    it("get_artifact resolves a live artifact id (skips when tenant has none)", async () => {
+      if (!fixtureId) return; // tenant has no artifacts to resolve
       const result = await callTool("get_artifact", { artifact_id: fixtureId });
       expect(result.isError ?? false).toBe(false);
       const body = JSON.parse(result.content[0].text) as Record<string, unknown>;
@@ -87,8 +114,7 @@ describe.skipIf(!STAGING)(
     });
 
     it("get_artifact_download_url returns a presigned URL with expires_in: 3600", async () => {
-      const fixtureId = process.env.ARTIFACTA_STAGING_FIXTURE_ARTIFACT_ID;
-      if (!fixtureId) return; // [needs-fixture]
+      if (!fixtureId) return; // tenant has no artifacts to resolve
       const result = await callTool("get_artifact_download_url", { artifact_id: fixtureId });
       expect(result.isError ?? false).toBe(false);
       const body = JSON.parse(result.content[0].text) as Record<string, unknown>;

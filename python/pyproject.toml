@@ -58,7 +58,7 @@ dev = [
     # langchain-core is required to run the LangChain adapter tests
     # (test_langchain_adapter.py). It is lightweight (no model/provider deps),
     # so it lives in `dev` to keep CI exercising the adapter's 11-tool contract.
-    "langchain-core>=0.3,<1.0",
+    "langchain-core>=0.3,<2.0",
 ]
 # Framework integration extras (AF_MCP-6.5 / 6.6). These pull heavy, fast-moving
 # SDKs, so they are opt-in — the core MCP server never imports them. The wrapper
@@ -80,7 +80,7 @@ openai-agents = [
 # uses `langchain` + `langchain-openai` for an LLM-driven demo (not required by
 # the adapter itself).
 langchain = [
-    "langchain-core>=0.3,<1.0",
+    "langchain-core>=0.3,<2.0",
 ]
 
 [tool.hatch.build.targets.wheel]

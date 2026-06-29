@@ -65,7 +65,7 @@ def test_cli_main_constructs_client_and_registers_tools(monkeypatch):
     Client which raised TypeError. This test exercises the full main() path
     with a valid API key, monkeypatching serve_stdio so we don't actually open
     a session, and asserts (a) the Client was constructed without TypeError,
-    (b) all 11 tools registered, (c) main returned 0.
+    (b) all 13 tools registered, (c) main returned 0.
 
     Run in-process (not subprocess) so we can monkeypatch serve_stdio.
     """
@@ -94,8 +94,8 @@ def test_cli_main_constructs_client_and_registers_tools(monkeypatch):
     # raised TypeError and main() would never have reached the run.
     client = client_factory.get_client()
     assert client is not None
-    # All 11 tools registered — proves register_all_tools ran post-Client.
-    assert len(safety.all_registrations()) == 11
+    # All 13 tools registered — proves register_all_tools ran post-Client.
+    assert len(safety.all_registrations()) == 13
     assert "coro" in served
 
 

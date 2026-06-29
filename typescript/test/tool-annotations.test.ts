@@ -14,6 +14,8 @@ const WRITE_TOOLS = new Set([
   "store_artifact",
   "request_upload_url",
   "complete_upload",
+  "publish_artifact",
+  "unpublish_artifact",
 ]);
 
 const DESTRUCTIVE_TOOLS = new Set([
@@ -22,7 +24,7 @@ const DESTRUCTIVE_TOOLS = new Set([
   "seal_session",
 ]);
 
-const ALL_11 = new Set([...READ_TOOLS, ...WRITE_TOOLS, ...DESTRUCTIVE_TOOLS]);
+const ALL_13 = new Set([...READ_TOOLS, ...WRITE_TOOLS, ...DESTRUCTIVE_TOOLS]);
 
 function snapshotTools() {
   return getFilteredTools({
@@ -38,9 +40,9 @@ describe("Tool safety annotations (AF_MCP-REG-2)", () => {
     registerAllTools();
   });
 
-  it("registers all 11 production tools", () => {
+  it("registers all 13 production tools", () => {
     const names = new Set(snapshotTools().map((t) => t.name));
-    expect(names).toEqual(ALL_11);
+    expect(names).toEqual(ALL_13);
   });
 
   for (const name of READ_TOOLS) {

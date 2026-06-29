@@ -210,9 +210,9 @@ READ_TOOLS = {
     "get_artifact_download_url",
     "list_sessions",
 }
-WRITE_TOOLS = {"store_artifact", "request_upload_url", "complete_upload"}
+WRITE_TOOLS = {"store_artifact", "request_upload_url", "complete_upload", "publish_artifact", "unpublish_artifact"}
 DESTRUCTIVE_TOOLS = {"create_download_link", "delete_artifact", "seal_session"}
-ALL_11 = READ_TOOLS | WRITE_TOOLS | DESTRUCTIVE_TOOLS
+ALL_13 = READ_TOOLS | WRITE_TOOLS | DESTRUCTIVE_TOOLS
 
 
 @pytest.mark.parametrize("name", sorted(READ_TOOLS))
@@ -237,13 +237,13 @@ def test_destructive_tools_annotations(name):
     assert tool_annotations(name, "destructive") == {"destructiveHint": True}
 
 
-def test_production_catalog_exposes_annotations_on_all_11_tools():
+def test_production_catalog_exposes_annotations_on_all_13_tools():
     register_all_tools()
     tools = get_filtered_tools(
         FilterOpts(has_confirmations=True, allow_destructive=True, write_confirm_required=False)
     )
     names = {t["name"] for t in tools}
-    assert names == ALL_11
+    assert names == ALL_13
     for t in tools:
         assert "annotations" in t
         name = t["name"]

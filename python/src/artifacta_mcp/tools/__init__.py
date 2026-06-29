@@ -14,9 +14,11 @@ from . import (
     get_artifact_download_url,
     list_artifacts,
     list_sessions,
+    publish_artifact,
     request_upload_url,
     seal_session,
     store_artifact,
+    unpublish_artifact,
     whoami,
 )
 
@@ -32,6 +34,8 @@ _MODULES = [
     create_download_link,
     delete_artifact,
     seal_session,
+    publish_artifact,
+    unpublish_artifact,
 ]
 
 

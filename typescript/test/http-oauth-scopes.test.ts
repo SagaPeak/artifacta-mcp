@@ -32,7 +32,7 @@ const READ_TOOLS = [
   "get_artifact_download_url",
   "list_sessions",
 ];
-const WRITE_TOOLS = ["store_artifact", "request_upload_url", "complete_upload"];
+const WRITE_TOOLS = ["store_artifact", "request_upload_url", "complete_upload", "publish_artifact", "unpublish_artifact"];
 const DESTROY_TOOLS = ["create_download_link", "delete_artifact", "seal_session"];
 
 function allRegisteredToolNames(): string[] {
@@ -56,7 +56,7 @@ describe("AG-07 tool→scope mapping (pinned to the spec scope table)", () => {
     }
   });
 
-  it("maps the 3 write tools to artifacts:write", () => {
+  it("maps the 5 write tools to artifacts:write", () => {
     for (const name of WRITE_TOOLS) {
       expect(requiredScopeForTool(name), name).toBe(SCOPE_WRITE);
     }
@@ -68,11 +68,11 @@ describe("AG-07 tool→scope mapping (pinned to the spec scope table)", () => {
     }
   });
 
-  it("covers exactly the 11 registered tools, with no ungated extras", () => {
+  it("covers exactly the 13 registered tools, with no ungated extras", () => {
     const registered = new Set(allRegisteredToolNames());
     const mapped = new Set([...READ_TOOLS, ...WRITE_TOOLS, ...DESTROY_TOOLS]);
     expect(registered).toEqual(mapped);
-    expect(registered.size).toBe(11);
+    expect(registered.size).toBe(13);
   });
 
   it("destroy trio matches the API internal path's destructive gate", () => {
@@ -127,17 +127,17 @@ describe("AG-07 isToolGranted under expanded scopes", () => {
     );
   });
 
-  it("a read+write token grants 8 tools and no destroy tools", () => {
+  it("a read+write token grants 10 tools and no destroy tools", () => {
     const gate = expandScopes([SCOPE_READ, SCOPE_WRITE]);
     const granted = allRegisteredToolNames().filter((n) => isToolGranted(n, gate));
     expect(new Set(granted)).toEqual(new Set([...READ_TOOLS, ...WRITE_TOOLS]));
-    expect(granted).toHaveLength(8);
+    expect(granted).toHaveLength(10);
   });
 
-  it("a destroy token grants all 11 tools", () => {
+  it("a destroy token grants all 13 tools", () => {
     const gate = expandScopes([SCOPE_DESTROY]); // implies write+read
     const granted = allRegisteredToolNames().filter((n) => isToolGranted(n, gate));
-    expect(granted).toHaveLength(11);
+    expect(granted).toHaveLength(13);
   });
 
   it("an empty grant grants nothing and denies resources", () => {

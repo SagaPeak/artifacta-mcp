@@ -16,6 +16,8 @@ import { registerCompleteUploadTool } from "./complete-upload.js";
 import { registerCreateDownloadLinkTool } from "./create-download-link.js";
 import { registerDeleteArtifactTool } from "./delete-artifact.js";
 import { registerSealSessionTool } from "./seal-session.js";
+import { registerPublishArtifactTool } from "./publish-artifact.js";
+import { registerUnpublishArtifactTool } from "./unpublish-artifact.js";
 import { registerWhoamiResource } from "../resources/whoami.js";
 import { registerArtifactResource } from "../resources/artifact.js";
 import { registerArtifactBytesResource } from "../resources/artifact-bytes.js";
@@ -33,6 +35,8 @@ export function registerAllTools(): void {
   registerCreateDownloadLinkTool();
   registerDeleteArtifactTool();
   registerSealSessionTool();
+  registerPublishArtifactTool();
+  registerUnpublishArtifactTool();
 }
 
 export function registerAllResources(): void {

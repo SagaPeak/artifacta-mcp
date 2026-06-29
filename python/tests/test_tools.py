@@ -14,6 +14,7 @@ import asyncio
 import base64
 import os
 from dataclasses import dataclass
+from unittest.mock import MagicMock
 
 import jsonschema
 import pytest
@@ -28,6 +29,9 @@ from artifacta.errors import (
 from artifacta_mcp import allowlist, client_factory, safety
 from artifacta_mcp.safety import ToolCallContext
 from artifacta_mcp.tools import register_all_tools
+from artifacta_mcp.tools._common import get_client
+
+_ctx = ToolCallContext(request_id="req_test")
 
 
 @dataclass
@@ -286,7 +290,7 @@ def _assert_mcp_err_shape(result: dict, code: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_all_11_tools_registered(fake_client):
+def test_all_13_tools_registered(fake_client):
     names = sorted(r.name for r in safety.all_registrations())
     assert names == sorted(
         [
@@ -301,6 +305,8 @@ def test_all_11_tools_registered(fake_client):
             "create_download_link",
             "delete_artifact",
             "seal_session",
+            "publish_artifact",
+            "unpublish_artifact",
         ]
     )
 
@@ -335,6 +341,8 @@ def test_safety_classification_matches_spec(fake_client):
         "create_download_link": "destructive",
         "delete_artifact": "destructive",
         "seal_session": "destructive",
+        "publish_artifact": "writeIdempotent",
+        "unpublish_artifact": "writeIdempotent",
     }
     for reg in safety.all_registrations():
         assert reg.safety == spec[reg.name], reg.name
@@ -669,3 +677,86 @@ def test_seal_session_rejects_bad_id(fake_client):
     result = _call("seal_session", {"session_id": "/etc/passwd"})
     _assert_mcp_err_shape(result, "invalid_request")
     assert fake_client.calls == []
+
+
+# ---------------------------------------------------------------------------
+# publish_artifact / unpublish_artifact
+# ---------------------------------------------------------------------------
+
+
+def test_publish_artifact_no_password_param():
+    from artifacta_mcp.tools.publish_artifact import INPUT_SCHEMA
+
+    assert "password" not in INPUT_SCHEMA["properties"]
+    assert "artifact_id" in INPUT_SCHEMA["required"]
+
+
+def test_publish_artifact_schema_has_visibility_and_access():
+    from artifacta_mcp.tools.publish_artifact import INPUT_SCHEMA
+
+    props = INPUT_SCHEMA["properties"]
+    assert props["visibility"]["enum"] == ["unlisted", "public"]
+    assert props["access"]["enum"] == ["none", "password"]
+
+
+def test_publish_artifact_calls_sdk(fake_client):
+    from artifacta_mcp.tools.publish_artifact import handler
+
+    client = get_client()
+    client.publish_artifact = MagicMock(
+        return_value={
+            "page_id": "pg_x",
+            "public_url": "https://artifacta.io/a/pg_x",
+            "visibility": "unlisted",
+            "access": "none",
+        }
+    )
+    result = asyncio.run(handler({"artifact_id": "art_x"}, _ctx))
+    assert not result.get("isError")
+    assert "pg_x" in result["content"][0]["text"]
+    client.publish_artifact.assert_called_once()
+
+
+def test_publish_artifact_missing_id_returns_invalid_request(fake_client):
+    from artifacta_mcp.tools.publish_artifact import handler
+
+    result = asyncio.run(handler({}, _ctx))
+    assert result.get("isError") is True
+    assert result["_meta"]["code"] == "invalid_request"
+
+
+def test_publish_artifact_defaults_visibility_and_access(fake_client):
+    from artifacta_mcp.tools.publish_artifact import handler
+
+    client = get_client()
+    client.publish_artifact = MagicMock(
+        return_value={
+            "page_id": "pg_d",
+            "public_url": "https://artifacta.io/a/pg_d",
+            "visibility": "unlisted",
+            "access": "none",
+        }
+    )
+    asyncio.run(handler({"artifact_id": "art_d"}, _ctx))
+    call_kwargs = client.publish_artifact.call_args
+    assert call_kwargs.kwargs.get("visibility") == "unlisted"
+    assert call_kwargs.kwargs.get("access") == "none"
+
+
+def test_unpublish_artifact_calls_sdk(fake_client):
+    from artifacta_mcp.tools.unpublish_artifact import handler
+
+    client = get_client()
+    client.unpublish = MagicMock(return_value={"page_id": "pg_x", "unpublished": True})
+    result = asyncio.run(handler({"artifact_id": "art_x"}, _ctx))
+    assert not result.get("isError")
+    assert "pg_x" in result["content"][0]["text"]
+    client.unpublish.assert_called_once_with("art_x")
+
+
+def test_unpublish_artifact_missing_id_returns_invalid_request(fake_client):
+    from artifacta_mcp.tools.unpublish_artifact import handler
+
+    result = asyncio.run(handler({}, _ctx))
+    assert result.get("isError") is True
+    assert result["_meta"]["code"] == "invalid_request"

@@ -39,7 +39,7 @@ const READ_TOOLS = [
   "get_artifact_download_url",
   "list_sessions",
 ];
-const WRITE_TOOLS = ["store_artifact", "request_upload_url", "complete_upload"];
+const WRITE_TOOLS = ["store_artifact", "request_upload_url", "complete_upload", "publish_artifact", "unpublish_artifact"];
 const DESTROY_TOOLS = ["create_download_link", "delete_artifact", "seal_session"];
 
 type Keys = Awaited<ReturnType<typeof generateKeyPair>>;
@@ -299,13 +299,13 @@ describe("AG-07 read token", () => {
 });
 
 describe("AG-07 read+write token", () => {
-  it("tools/list exposes 8 tools and no destroy tools", async () => {
+  it("tools/list exposes 10 tools and no destroy tools", async () => {
     const t = await mint({ scope: "artifacts:read artifacts:write" });
     const res = await postBearer(t, mcpBody("tools/list", {}, 7));
     const body = (await res.json()) as RpcEnvelope<{ tools: Array<{ name: string }> }>;
     const names = body.result!.tools.map((x) => x.name);
     expect(new Set(names)).toEqual(new Set([...READ_TOOLS, ...WRITE_TOOLS]));
-    expect(names).toHaveLength(8);
+    expect(names).toHaveLength(10);
     expect(names.some((n) => DESTROY_TOOLS.includes(n))).toBe(false);
   });
 
@@ -341,11 +341,11 @@ describe("AG-07 read+write token", () => {
 });
 
 describe("AG-07 read+write+destroy token", () => {
-  it("tools/list exposes all 11 tools", async () => {
+  it("tools/list exposes all 13 tools", async () => {
     const t = await mint({ scope: "artifacts:read artifacts:write artifacts:destroy" });
     const res = await postBearer(t, mcpBody("tools/list", {}, 10));
     const body = (await res.json()) as RpcEnvelope<{ tools: Array<{ name: string }> }>;
-    expect(body.result!.tools).toHaveLength(11);
+    expect(body.result!.tools).toHaveLength(13);
   });
 
   it("delete_artifact reaches the internal API (not scope-denied)", async () => {
@@ -411,7 +411,7 @@ describe("AG-07 ak_live_ regression with OAuth configured", () => {
     const beforeInternal = internalStub.requestLog.length;
     const list = await postBearer(VALID_KEY, mcpBody("tools/list", {}, 18));
     const listBody = (await list.json()) as RpcEnvelope<{ tools: unknown[] }>;
-    expect(listBody.result!.tools).toHaveLength(11);
+    expect(listBody.result!.tools).toHaveLength(13);
 
     const call = await postBearer(VALID_KEY, mcpBody("tools/call", { name: "whoami", arguments: {} }, 19));
     expect(call.status).toBe(200);

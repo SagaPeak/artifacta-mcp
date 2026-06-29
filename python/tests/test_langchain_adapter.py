@@ -25,7 +25,7 @@ ToolException = pytest.importorskip("langchain_core.tools").ToolException
 
 # --------------------------------------------------------------------------
 # The REAL MCP tool catalog — the exact `tools/list` payload the server emits
-# (all 11 tools; `allow_destructive=True` so the destructive ones are present).
+# (all 13 tools; `allow_destructive=True` so the destructive ones are present).
 # Each entry is a `{name, description, inputSchema, ...}` dict, which the
 # adapter consumes directly (see test_dict_descriptor_supported).
 # --------------------------------------------------------------------------
@@ -51,13 +51,14 @@ def _real_tool_catalog() -> list[dict]:
             safety.register_tool(reg)
 
 
-ALL_11_TOOLS = _real_tool_catalog()
-_BY_NAME = {t["name"]: t for t in ALL_11_TOOLS}
+ALL_13_TOOLS = _real_tool_catalog()
+_BY_NAME = {t["name"]: t for t in ALL_13_TOOLS}
 
 EXPECTED_TOOL_NAMES = {
     "whoami", "list_artifacts", "get_artifact", "get_artifact_download_url",
     "list_sessions", "store_artifact", "request_upload_url", "complete_upload",
     "create_download_link", "delete_artifact", "seal_session",
+    "publish_artifact", "unpublish_artifact",
 }
 
 
@@ -74,32 +75,32 @@ class _RecordingCallTool:
 
 
 # --------------------------------------------------------------------------
-# Sanity: the real catalog actually has all 11 tools (otherwise every
+# Sanity: the real catalog actually has all 13 tools (otherwise every
 # fidelity assertion below would be vacuously testing a short list).
 # --------------------------------------------------------------------------
 
-def test_real_catalog_has_all_11_tools():
-    assert len(ALL_11_TOOLS) == 11
-    assert {t["name"] for t in ALL_11_TOOLS} == EXPECTED_TOOL_NAMES
+def test_real_catalog_has_all_13_tools():
+    assert len(ALL_13_TOOLS) == 13
+    assert {t["name"] for t in ALL_13_TOOLS} == EXPECTED_TOOL_NAMES
 
 
 # --------------------------------------------------------------------------
 # to_langchain_tools — wrapping logic driven by the real catalog
 # --------------------------------------------------------------------------
 
-def test_handles_all_11_tools():
-    tools = lc_adapter.to_langchain_tools(ALL_11_TOOLS, _RecordingCallTool())
-    assert len(tools) == 11
+def test_handles_all_13_tools():
+    tools = lc_adapter.to_langchain_tools(ALL_13_TOOLS, _RecordingCallTool())
+    assert len(tools) == 13
     assert {t.name for t in tools} == EXPECTED_TOOL_NAMES
 
 
 def test_each_item_is_structured_tool():
-    tools = lc_adapter.to_langchain_tools(ALL_11_TOOLS, _RecordingCallTool())
+    tools = lc_adapter.to_langchain_tools(ALL_13_TOOLS, _RecordingCallTool())
     assert all(isinstance(t, StructuredTool) for t in tools)
 
 
 def test_whoami_present():
-    tools = lc_adapter.to_langchain_tools(ALL_11_TOOLS, _RecordingCallTool())
+    tools = lc_adapter.to_langchain_tools(ALL_13_TOOLS, _RecordingCallTool())
     assert "whoami" in {t.name for t in tools}
 
 
@@ -108,7 +109,7 @@ def test_schema_fidelity_for_every_tool():
     name, description, and the full inputSchema (including `oneOf` / `required`),
     not a simplified approximation. This is the assertion that catches a
     renamed tool, a dropped required field, or a lost `oneOf` constraint."""
-    tools = {t.name: t for t in lc_adapter.to_langchain_tools(ALL_11_TOOLS, _RecordingCallTool())}
+    tools = {t.name: t for t in lc_adapter.to_langchain_tools(ALL_13_TOOLS, _RecordingCallTool())}
     assert set(tools) == EXPECTED_TOOL_NAMES
     for name, descriptor in _BY_NAME.items():
         st = tools[name]
@@ -122,7 +123,7 @@ def test_schema_fidelity_for_every_tool():
 def test_store_artifact_schema_keeps_required_and_oneof():
     """Regression for the specific drift Codex flagged: the old mock omitted
     store_artifact's required `filename` and its content/path `oneOf`."""
-    st = {t.name: t for t in lc_adapter.to_langchain_tools(ALL_11_TOOLS, _RecordingCallTool())}[
+    st = {t.name: t for t in lc_adapter.to_langchain_tools(ALL_13_TOOLS, _RecordingCallTool())}[
         "store_artifact"
     ]
     schema = st.args_schema
@@ -133,14 +134,14 @@ def test_store_artifact_schema_keeps_required_and_oneof():
 def test_request_upload_url_schema_keeps_required_fields():
     """Regression: the old mock omitted request_upload_url's required
     content_type / size_bytes."""
-    st = {t.name: t for t in lc_adapter.to_langchain_tools(ALL_11_TOOLS, _RecordingCallTool())}[
+    st = {t.name: t for t in lc_adapter.to_langchain_tools(ALL_13_TOOLS, _RecordingCallTool())}[
         "request_upload_url"
     ]
     assert set(st.args_schema["required"]) >= {"filename", "content_type", "size_bytes"}
 
 
 def test_fewer_tools_no_hardcoded_count():
-    subset = ALL_11_TOOLS[:3]
+    subset = ALL_13_TOOLS[:3]
     tools = lc_adapter.to_langchain_tools(subset, _RecordingCallTool())
     assert len(tools) == 3
 
@@ -167,7 +168,7 @@ def test_missing_name_raises():
 
 def test_tool_dispatches_to_call_tool():
     dispatcher = _RecordingCallTool(response="hello")
-    tools = {t.name: t for t in lc_adapter.to_langchain_tools(ALL_11_TOOLS, dispatcher)}
+    tools = {t.name: t for t in lc_adapter.to_langchain_tools(ALL_13_TOOLS, dispatcher)}
     out = asyncio.run(tools["get_artifact"].ainvoke({"artifact_id": "art_x"}))
     assert out == "hello"
     assert dispatcher.calls == [("get_artifact", {"artifact_id": "art_x"})]
@@ -182,7 +183,7 @@ def test_call_tool_result_text_extracted():
     async def _call(name, args):
         return _Result()
 
-    tool = lc_adapter.to_langchain_tool(ALL_11_TOOLS[0], _call)
+    tool = lc_adapter.to_langchain_tool(ALL_13_TOOLS[0], _call)
     assert asyncio.run(tool.ainvoke({})) == "line1\nline2"
 
 
@@ -195,7 +196,7 @@ def test_call_tool_error_raises_tool_exception():
     async def _call(name, args):
         return _ErrResult()
 
-    tool = lc_adapter.to_langchain_tool(ALL_11_TOOLS[0], _call)
+    tool = lc_adapter.to_langchain_tool(ALL_13_TOOLS[0], _call)
     with pytest.raises(ToolException, match="unauthorized"):
         asyncio.run(tool.ainvoke({}))
 
@@ -209,7 +210,7 @@ def test_structured_content_fallback_when_no_text():
     async def _call(name, args):
         return _Result()
 
-    tool = lc_adapter.to_langchain_tool(ALL_11_TOOLS[0], _call)
+    tool = lc_adapter.to_langchain_tool(ALL_13_TOOLS[0], _call)
     assert asyncio.run(tool.ainvoke({})) == '{"plan": "free"}'
 
 
@@ -219,13 +220,13 @@ def test_structured_content_fallback_when_no_text():
 
 def test_get_tools_offline_mode():
     dispatcher = _RecordingCallTool()
-    tools = lc_adapter.get_tools(mcp_tools=ALL_11_TOOLS, call_tool=dispatcher)
-    assert len(tools) == 11
+    tools = lc_adapter.get_tools(mcp_tools=ALL_13_TOOLS, call_tool=dispatcher)
+    assert len(tools) == 13
 
 
 def test_get_tools_offline_requires_call_tool():
     with pytest.raises(ValueError, match="call_tool is required"):
-        lc_adapter.get_tools(mcp_tools=ALL_11_TOOLS)
+        lc_adapter.get_tools(mcp_tools=ALL_13_TOOLS)
 
 
 # --------------------------------------------------------------------------
@@ -234,7 +235,7 @@ def test_get_tools_offline_requires_call_tool():
 
 def test_aget_tools_from_mocked_session():
     class _ListResult:
-        tools = ALL_11_TOOLS
+        tools = ALL_13_TOOLS
 
     class _Session:
         def __init__(self):
@@ -249,7 +250,7 @@ def test_aget_tools_from_mocked_session():
 
     session = _Session()
     tools = asyncio.run(lc_adapter.aget_tools(session))
-    assert len(tools) == 11
+    assert len(tools) == 13
     # The wrapped tool dispatches back into session.call_tool.
     by_name = {t.name: t for t in tools}
     asyncio.run(by_name["whoami"].ainvoke({}))
@@ -276,7 +277,7 @@ async def _list_via_real_stdio() -> list[StructuredTool]:
 
     # Default command = current interpreter (`-m artifacta_mcp.cli`), so the
     # server is found without the console script on PATH. allow_destructive
-    # surfaces all 11 tools (destructive ones are hidden otherwise).
+    # surfaces all 13 tools (destructive ones are hidden otherwise).
     params_dict = build_stdio_params(
         api_key="ak_live_faketestkey0000000000000000",
         allow_destructive=True,
@@ -288,7 +289,7 @@ async def _list_via_real_stdio() -> list[StructuredTool]:
             return await lc_adapter.aget_tools(session)
 
 
-def test_real_stdio_lists_all_11_tools_and_matches_schemas():
+def test_real_stdio_lists_all_13_tools_and_matches_schemas():
     tools = asyncio.run(asyncio.wait_for(_list_via_real_stdio(), timeout=30))
     by_name = {t.name: t for t in tools}
     assert set(by_name) == EXPECTED_TOOL_NAMES

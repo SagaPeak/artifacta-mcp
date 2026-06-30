@@ -4,6 +4,55 @@ All notable changes to `@artifacta-mcp/mcp` are documented here. The format foll
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] — 2026-06-26
+
+Artifact Pages tools. Agents can now publish and unpublish shareable artifact
+pages end-to-end using the same stdio transport as prior versions.
+
+### Tools
+
+- `publish_artifact` — publish an existing artifact as a public or unlisted page
+  at `https://artifacta.io/a/{slug}`. Maps to
+  `POST /v1/artifacts/{artifact_id}/publish`. Takes `artifact_id` (required),
+  `title`, `visibility` (`"unlisted"` | `"public"`, default `"unlisted"`), and
+  `access` (`"none"` | `"password"`, default `"none"`). Returns
+  `{page_id, public_url, visibility, access, published_at}`. Idempotent:
+  re-publishing the same artifact ID upserts the existing page and keeps the
+  same URL. Classified **writeIdempotent** (not destructive); uses
+  `idempotentWrite` retry policy. Free-tier agents receive `quota_exceeded`
+  when requesting `access: "password"`.
+- `unpublish_artifact` — soft-unpublish a page by artifact ID. Maps to
+  `DELETE /v1/artifacts/{artifact_id}/publish`. The underlying artifact is not
+  deleted; only `unpublished_at` is set. The public URL stops resolving
+  immediately. Idempotent: calling unpublish on an already-unpublished artifact
+  is a no-op. Classified **writeIdempotent**; uses `idempotentWrite` retry
+  policy.
+
+Both ports (TypeScript and Python) ship together. Tool count is now **13**
+(11 from v1.0 + 2 new Artifact Pages tools).
+
+> **Note:** Neither 1.0.3 nor 1.0.4 has been tagged in git or released to
+> npm/PyPI as of 2026-06-26. `mcp/typescript/package.json` still reflects
+> `1.0.2`; `mcp/server.json` top-level field reflects `1.0.4`. The version-pin
+> reconcile and republish are a separate PM/ops decision.
+
+## [1.0.3] — 2026-06-25
+
+Maintenance release — no tool-surface or behavior changes for clients.
+
+### Changed
+
+- Dependency updates in the TypeScript port: `smol-toml` 1.6.1 → 1.7.0,
+  `@types/node` 22.19.17 → 22.20.0, `tsx` 4.21.0 → 4.22.4.
+- Nightly CI: added live hosted-canary job with P0/P1 transport-model HTTP
+  checks and a self-healing per-tool fixture to catch rotted test fixtures.
+
+> **Attribution note:** The boundary between 1.0.3 and 1.0.4 is best-effort.
+> No git tags exist for either version (tags stop at `mcp-typescript-v1.0.2`).
+> Commit `c74cc7b` (dep bumps, Jun 25) is attributed to 1.0.3; commit
+> `57c212d` (publish/unpublish tools, Jun 26) to 1.0.4. Other infrastructure
+> commits between 1.0.2 and 1.0.4 may belong to either release.
+
 ## [1.0.2] — 2026-06-12
 
 Pre-open-source polish — no tool-surface or behavior changes for compliant

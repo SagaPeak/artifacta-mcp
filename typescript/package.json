@@ -1,6 +1,6 @@
 {
   "name": "@artifacta-mcp/mcp",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "mcpName": "io.artifacta/mcp",
   "description": "Artifacta MCP server — artifact store for AI agents (TypeScript, Node 20+).",
   "type": "module",

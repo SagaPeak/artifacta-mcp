@@ -7,6 +7,6 @@
 # (stdlib only), so this is safe at package load.
 from ._integration_common import ARTIFACTA_MCP_COMMAND, build_stdio_params
 
-__version__ = "1.0.2"
+__version__ = "1.0.4"
 
 __all__ = ["__version__", "ARTIFACTA_MCP_COMMAND", "build_stdio_params"]

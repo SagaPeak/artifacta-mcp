@@ -446,6 +446,70 @@ def test_store_artifact_content_branch_pushes_bytes(fake_client):
     assert result["_meta"]["idempotency_key"].startswith("mcp_")
 
 
+def test_store_artifact_defaults_agent_id_to_mcp_when_no_client_name(fake_client):
+    payload = base64.b64encode(b"hello world").decode()
+    result = _call("store_artifact", {"filename": "hello.txt", "content": payload})
+    _assert_mcp_ok_shape(result, "art_bbbbbbbbbbbbbbbb")
+    last = fake_client.calls[-1]
+    assert last.kwargs["agent_id"] == "mcp"
+
+
+def test_store_artifact_defaults_agent_id_to_client_name(fake_client):
+    reg = safety.get_tool_registration("store_artifact")
+    ctx = ToolCallContext(request_id="req_test", client_name="claude-code")
+    payload = base64.b64encode(b"hello world").decode()
+    result = asyncio.run(reg.handler({"filename": "hello.txt", "content": payload}, ctx))
+    _assert_mcp_ok_shape(result, "art_bbbbbbbbbbbbbbbb")
+    last = fake_client.calls[-1]
+    assert last.kwargs["agent_id"] == "claude-code"
+
+
+def test_store_artifact_explicit_agent_id_wins_over_client_name(fake_client):
+    reg = safety.get_tool_registration("store_artifact")
+    ctx = ToolCallContext(request_id="req_test", client_name="claude-code")
+    payload = base64.b64encode(b"hello world").decode()
+    result = asyncio.run(
+        reg.handler(
+            {"filename": "hello.txt", "content": payload, "agent_id": "agent-prod"}, ctx
+        )
+    )
+    _assert_mcp_ok_shape(result, "art_bbbbbbbbbbbbbbbb")
+    last = fake_client.calls[-1]
+    assert last.kwargs["agent_id"] == "agent-prod"
+
+
+def test_store_artifact_model_shorthand_folds_into_metadata(fake_client):
+    payload = base64.b64encode(b"hello world").decode()
+    result = _call(
+        "store_artifact", {"filename": "hello.txt", "content": payload, "model": "claude-5"}
+    )
+    _assert_mcp_ok_shape(result, "art_bbbbbbbbbbbbbbbb")
+    last = fake_client.calls[-1]
+    assert last.kwargs["metadata"] == {"model": "claude-5"}
+
+
+def test_store_artifact_explicit_metadata_model_wins_over_shorthand(fake_client):
+    payload = base64.b64encode(b"hello world").decode()
+    result = _call(
+        "store_artifact",
+        {
+            "filename": "hello.txt",
+            "content": payload,
+            "model": "claude-5",
+            "metadata": {"model": "gpt-5.5", "stage": "final"},
+        },
+    )
+    _assert_mcp_ok_shape(result, "art_bbbbbbbbbbbbbbbb")
+    last = fake_client.calls[-1]
+    assert last.kwargs["metadata"] == {"model": "gpt-5.5", "stage": "final"}
+
+
+def test_store_artifact_rejects_non_string_model(fake_client):
+    result = _call("store_artifact", {"filename": "f", "content": "Zg==", "model": 5})
+    _assert_mcp_err_shape(result, "invalid_request")
+    assert fake_client.calls == []
+
+
 def test_store_artifact_rejects_both_content_and_path(fake_client):
     result = _call(
         "store_artifact",

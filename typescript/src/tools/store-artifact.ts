@@ -70,7 +70,12 @@ export const STORE_ARTIFACT_DESCRIPTION =
   "within 24h returns the original artifact and never double-bills. If you omit it, the server " +
   "auto-generates one and returns it under `_meta.idempotency_key`, but that key protects only " +
   "in-process retries within a single call — it is lost if the server restarts, so pre-commit " +
-  "your own key when durability matters.";
+  "your own key when durability matters.\n\n" +
+  "Provenance: if you omit `agent_id`, the server stamps a default (the connected MCP client's " +
+  "name, or \"mcp\") so that publishing this artifact later still produces a populated " +
+  "provenance receipt. Pass your own `model` (e.g. \"claude-5\", \"gpt-5.5\") to record which " +
+  "model generated this content — it is stored as `metadata.model` unless you already set that " +
+  "key yourself in `metadata`, in which case your explicit value wins.";
 
 export const STORE_ARTIFACT_TOOL: Tool = {
   name: "store_artifact",
@@ -107,6 +112,14 @@ export const STORE_ARTIFACT_TOOL: Tool = {
         type: "string",
         description:
           "Duration suffix (e.g. `7d`, `30d`) or `never` (Pro only). Defaults to plan default.",
+      },
+      model: {
+        type: "string",
+        maxLength: 128,
+        description:
+          "Model identifier that generated this content (e.g. \"claude-5\", \"gpt-5.5\"). " +
+          "Stored as `metadata.model` for the provenance receipt on published pages; ignored " +
+          "if `metadata.model` is already set explicitly.",
       },
       idempotency_key: { type: "string", minLength: 1, maxLength: 256 },
     },
@@ -153,7 +166,7 @@ export const storeArtifactHandler = async (
   }
 
   // Optional string fields.
-  for (const key of ["content_type", "session_id", "agent_id", "ttl"] as const) {
+  for (const key of ["content_type", "session_id", "agent_id", "ttl", "model"] as const) {
     if (a[key] !== undefined && typeof a[key] !== "string") {
       return localInvalidRequest(`\`${key}\` must be a string`);
     }
@@ -185,11 +198,40 @@ export const storeArtifactHandler = async (
     if (metaError) return localInvalidRequest(metaError);
   }
 
-  // Validated above — cast through unknown is safe.
-  if (hasContent) {
-    return storeArtifactContent(a as unknown as StoreArtifactArgs, ctx);
+  // `model` shorthand folds into `metadata.model` unless the caller already set
+  // that key explicitly in `metadata` (explicit metadata wins — see tool
+  // description). Build a fresh metadata object rather than mutating `a.metadata`.
+  const metadata: Record<string, string> = {
+    ...(a.metadata as Record<string, string> | undefined),
+  };
+  if (typeof a.model === "string" && metadata.model === undefined) {
+    metadata.model = a.model;
   }
-  return storeArtifactPath(a as unknown as StoreArtifactArgs, ctx);
+
+  // Provenance auto-stamp (AF_MCP-PROV): publish_artifact_page re-derives its
+  // provenance receipt from the artifact's own `agent_id` / `metadata.model` at
+  // publish time — it takes no provenance params of its own — so an untagged
+  // upload here would silently produce an empty receipt later. Stamp a default
+  // agent_id when the caller didn't supply one: the connected MCP client's name
+  // if the transport exposed it during `initialize`, else the literal "mcp".
+  const agentId = typeof a.agent_id === "string" ? a.agent_id : ctx?.clientName ?? "mcp";
+
+  const finalArgs: StoreArtifactArgs = {
+    filename: a.filename as string,
+    content: hasContent ? (a.content as string) : undefined,
+    path: hasPath ? (a.path as string) : undefined,
+    content_type: a.content_type as string | undefined,
+    session_id: a.session_id as string | undefined,
+    agent_id: agentId,
+    metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+    ttl: a.ttl as string | undefined,
+    idempotency_key: a.idempotency_key as string | undefined,
+  };
+
+  if (hasContent) {
+    return storeArtifactContent(finalArgs, ctx);
+  }
+  return storeArtifactPath(finalArgs, ctx);
 };
 
 export function registerStoreArtifactTool(): void {

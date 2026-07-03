@@ -173,13 +173,14 @@ function wireHandlers(srv: ArtifactaServer): void {
     }
 
     const requestId = randomUUID();
+    const clientName = srv.getClientVersion()?.name;
     const start = performance.now();
     logger.debug("tool dispatch", { tool: name, request_id: requestId });
 
     let success = true;
     let errorCode: string | undefined;
     try {
-      const result = await reg.handler(req.params.arguments, { requestId });
+      const result = await reg.handler(req.params.arguments, { requestId, clientName });
 
       if (result.isError) {
         success = false;

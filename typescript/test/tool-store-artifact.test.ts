@@ -426,6 +426,83 @@ describe("AF_MCP-3.1 — session_id schema gate", () => {
   });
 });
 
+// ─── provenance stamping (AF_MCP-PROV) ─────────────────────────────────────────
+
+describe("AF_MCP-PROV — agent_id auto-stamp", () => {
+  it("defaults agent_id to \"mcp\" when omitted and no ctx.clientName", async () => {
+    mockRequest.mockResolvedValueOnce(okResult());
+    await storeArtifactHandler({
+      filename: "f",
+      content: Buffer.from("x").toString("base64"),
+    });
+    const opts = mockRequest.mock.calls[0][0];
+    expect(opts.body.agent_id).toBe("mcp");
+  });
+
+  it("defaults agent_id to ctx.clientName when the transport exposes it", async () => {
+    mockRequest.mockResolvedValueOnce(okResult());
+    await storeArtifactHandler(
+      { filename: "f", content: Buffer.from("x").toString("base64") },
+      { requestId: "req_test", clientName: "claude-code" }
+    );
+    const opts = mockRequest.mock.calls[0][0];
+    expect(opts.body.agent_id).toBe("claude-code");
+  });
+
+  it("an explicit agent_id wins over ctx.clientName", async () => {
+    mockRequest.mockResolvedValueOnce(okResult());
+    await storeArtifactHandler(
+      { filename: "f", content: Buffer.from("x").toString("base64"), agent_id: "agent-prod" },
+      { requestId: "req_test", clientName: "claude-code" }
+    );
+    const opts = mockRequest.mock.calls[0][0];
+    expect(opts.body.agent_id).toBe("agent-prod");
+  });
+});
+
+describe("AF_MCP-PROV — model shorthand", () => {
+  it("folds `model` into metadata.model", async () => {
+    mockRequest.mockResolvedValueOnce(okResult());
+    await storeArtifactHandler({
+      filename: "f",
+      content: Buffer.from("x").toString("base64"),
+      model: "claude-5",
+    });
+    const opts = mockRequest.mock.calls[0][0];
+    expect(opts.body.metadata).toEqual({ model: "claude-5" });
+  });
+
+  it("an explicit metadata.model wins over the `model` shorthand", async () => {
+    mockRequest.mockResolvedValueOnce(okResult());
+    await storeArtifactHandler({
+      filename: "f",
+      content: Buffer.from("x").toString("base64"),
+      model: "claude-5",
+      metadata: { model: "gpt-5.5", stage: "final" },
+    });
+    const opts = mockRequest.mock.calls[0][0];
+    expect(opts.body.metadata).toEqual({ model: "gpt-5.5", stage: "final" });
+  });
+
+  it("non-string model → invalid_request, API not called", async () => {
+    const res = await storeArtifactHandler({
+      filename: "f",
+      content: "eHg=",
+      model: 123,
+    });
+    expect(res.isError).toBe(true);
+    expect((res._meta as { code: string }).code).toBe("invalid_request");
+    expect(mockRequest).not.toHaveBeenCalled();
+  });
+
+  it("schema exposes a `model` property with a maxLength", () => {
+    const s = STORE_ARTIFACT_TOOL.inputSchema as Record<string, unknown>;
+    const props = s.properties as Record<string, Record<string, unknown>>;
+    expect(props.model.type).toBe("string");
+    expect(props.model.maxLength).toBe(128);
+  });
+});
+
 // ─── description ──────────────────────────────────────────────────────────────
 
 describe("AF_MCP-3.1 — description", () => {

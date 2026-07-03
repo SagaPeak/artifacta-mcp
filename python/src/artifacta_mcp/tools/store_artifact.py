@@ -40,7 +40,12 @@ STORE_ARTIFACT_DESCRIPTION = (
     "within 24h returns the original artifact and never double-bills. If you omit it, the server "
     "auto-generates one and returns it under `_meta.idempotency_key`, but that key protects only "
     "in-process retries within a single call — it is lost if the server restarts, so pre-commit "
-    "your own key when durability matters."
+    "your own key when durability matters.\n\n"
+    "Provenance: if you omit `agent_id`, the server stamps a default (the connected MCP client's "
+    "name, or \"mcp\") so that publishing this artifact later still produces a populated "
+    "provenance receipt. Pass your own `model` (e.g. \"claude-5\", \"gpt-5.5\") to record which "
+    "model generated this content — it is stored as `metadata.model` unless you already set that "
+    "key yourself in `metadata`, in which case your explicit value wins."
 )
 
 METADATA_KEY_PATTERN = r"^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
@@ -83,6 +88,15 @@ INPUT_SCHEMA = {
             "type": "string",
             "description": "Duration suffix (e.g. `7d`, `30d`) or `never` (Pro only). Defaults to plan default.",
         },
+        "model": {
+            "type": "string",
+            "maxLength": 128,
+            "description": (
+                "Model identifier that generated this content (e.g. \"claude-5\", \"gpt-5.5\"). "
+                "Stored as `metadata.model` for the provenance receipt on published pages; "
+                "ignored if `metadata.model` is already set explicitly."
+            ),
+        },
         "idempotency_key": {"type": "string", "minLength": 1, "maxLength": 256},
     },
     "required": ["filename"],
@@ -116,7 +130,7 @@ def _generate_idempotency_key() -> str:
     return f"mcp_{uuid.uuid4().hex}"
 
 
-async def handler(args: dict[str, Any] | None, _ctx) -> dict[str, Any]:
+async def handler(args: dict[str, Any] | None, ctx) -> dict[str, Any]:
     a = args or {}
 
     filename = a.get("filename")
@@ -135,7 +149,7 @@ async def handler(args: dict[str, Any] | None, _ctx) -> dict[str, Any]:
     if has_path and not isinstance(a["path"], str):
         return _local_invalid_request("`path` must be a string")
 
-    for key in ("content_type", "session_id", "agent_id", "ttl"):
+    for key in ("content_type", "session_id", "agent_id", "ttl", "model"):
         if a.get(key) is not None and not isinstance(a.get(key), str):
             return _local_invalid_request(f"`{key}` must be a string")
 
@@ -156,12 +170,28 @@ async def handler(args: dict[str, Any] | None, _ctx) -> dict[str, Any]:
         if meta_err:
             return _local_invalid_request(meta_err)
 
-    metadata = a.get("metadata") if isinstance(a.get("metadata"), dict) else None
     content_type = a.get("content_type") if isinstance(a.get("content_type"), str) else None
     ttl = a.get("ttl") if isinstance(a.get("ttl"), str) else None
-    agent_id = a.get("agent_id") if isinstance(a.get("agent_id"), str) else None
     idempotency_key = idem if isinstance(idem, str) else _generate_idempotency_key()
     auto_injected = idem is None
+
+    # `model` shorthand folds into `metadata.model` unless the caller already
+    # set that key explicitly in `metadata` (explicit metadata wins — see tool
+    # description). Build a fresh dict rather than mutating the caller's input.
+    metadata: dict[str, str] = dict(a["metadata"]) if isinstance(a.get("metadata"), dict) else {}
+    model = a.get("model")
+    if isinstance(model, str) and "model" not in metadata:
+        metadata["model"] = model
+    metadata_arg = metadata or None
+
+    # Provenance auto-stamp (AF_MCP-PROV): publish_artifact_page re-derives its
+    # provenance receipt from the artifact's own `agent_id` / `metadata.model` at
+    # publish time — it takes no provenance params of its own — so an untagged
+    # upload here would silently produce an empty receipt later. Stamp a default
+    # agent_id when the caller didn't supply one: the connected MCP client's name
+    # if the session exposed it during `initialize`, else the literal "mcp".
+    raw_agent_id = a.get("agent_id")
+    agent_id = raw_agent_id if isinstance(raw_agent_id, str) else (getattr(ctx, "client_name", None) or "mcp")
 
     client = get_client()
 
@@ -181,7 +211,7 @@ async def handler(args: dict[str, Any] | None, _ctx) -> dict[str, Any]:
                 content_type=content_type,
                 session_id=session_id if isinstance(session_id, str) else None,
                 agent_id=agent_id,
-                metadata=metadata,
+                metadata=metadata_arg,
                 ttl=ttl,
                 idempotency_key=idempotency_key,
             )
@@ -255,7 +285,7 @@ async def handler(args: dict[str, Any] | None, _ctx) -> dict[str, Any]:
                 content_type=content_type,
                 session_id=session_id if isinstance(session_id, str) else None,
                 agent_id=agent_id,
-                metadata=metadata,
+                metadata=metadata_arg,
                 ttl=ttl,
                 idempotency_key=idempotency_key,
             )

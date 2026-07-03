@@ -36,6 +36,11 @@ class ToolCallContext:
     """Per-call context threaded into tool handlers (AF_MCP-1.7)."""
 
     request_id: str
+    # The connected MCP client's `clientInfo.name` from the `initialize`
+    # handshake (e.g. "claude-code"), when the session exposes it. None when
+    # unavailable. Used by store_artifact (AF_MCP-PROV) to auto-stamp
+    # `agent_id` when the caller didn't supply one.
+    client_name: str | None = None
 
 
 ToolHandler = Callable[[dict[str, Any] | None, ToolCallContext], Awaitable[dict[str, Any]]]

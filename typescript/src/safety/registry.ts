@@ -9,6 +9,13 @@ export type ToolSafety = "safe" | "writeIdempotent" | "writeNonIdempotent" | "de
 export interface ToolCallContext {
   /** Per-tool-call UUID; threaded through to the HTTP layer and surfaced in result _meta. */
   requestId: string;
+  /**
+   * The connected MCP client's `clientInfo.name` from the `initialize` handshake
+   * (e.g. "claude-code"), when the transport exposes it. Undefined for stateless
+   * HTTP calls that never replay `initialize`. Used by store_artifact (AF_MCP-PROV)
+   * to auto-stamp `agent_id` when the caller didn't supply one.
+   */
+  clientName?: string;
 }
 
 export type ToolHandler = (

@@ -51,6 +51,18 @@ def build_server(allow_destructive: bool, write_confirm_required: bool) -> Serve
         exp = getattr(params.capabilities, "experimental", None) or {}
         return isinstance(exp, dict) and "confirmations" in exp
 
+    def _client_name() -> str | None:
+        """The connected client's `clientInfo.name` from `initialize`, if any."""
+        try:
+            session = server.request_context.session
+        except LookupError:
+            return None
+        params = getattr(session, "client_params", None)
+        if params is None:
+            return None
+        client_info = getattr(params, "clientInfo", None)
+        return getattr(client_info, "name", None)
+
     @server.list_tools()
     async def _list_tools() -> list[types.Tool]:
         opts = FilterOpts(
@@ -100,7 +112,7 @@ def build_server(allow_destructive: bool, write_confirm_required: bool) -> Serve
         if reg.safety == "destructive":
             emit_destructive_audit(name, arguments)
 
-        ctx = ToolCallContext(request_id=str(uuid.uuid4()))
+        ctx = ToolCallContext(request_id=str(uuid.uuid4()), client_name=_client_name())
         try:
             result = await reg.handler(arguments, ctx)
         except Exception as exc:  # pragma: no cover — handler must catch its own errors

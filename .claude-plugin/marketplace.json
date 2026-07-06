@@ -1,0 +1,14 @@
+{
+  "name": "artifacta",
+  "owner": { "name": "Artifacta", "email": "team@artifacta.io" },
+  "description": "Artifacta — the artifact store for AI agents",
+  "plugins": [
+    {
+      "name": "artifacta",
+      "source": "./plugin",
+      "description": "Persist, retrieve, and share agent run outputs via the hosted Artifacta MCP server, plus a skill that teaches Claude when and how to save artifacts.",
+      "category": "productivity",
+      "keywords": ["artifacts", "storage", "memory", "mcp", "ai-agents"]
+    }
+  ]
+}

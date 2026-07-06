@@ -21,6 +21,22 @@ path-confinement engine:
 | [`typescript/`](./typescript) | [`@artifacta-mcp/mcp`](https://www.npmjs.com/package/@artifacta-mcp/mcp) | Node 20+ |
 | [`python/`](./python) | [`artifacta-mcp`](https://pypi.org/project/artifacta-mcp/) | Python 3.10+ |
 
+## Install as a Claude Code plugin
+
+For Claude Code, the fastest path is the plugin marketplace this repo doubles
+as — it wires up the hosted server *and* a skill that persists run outputs
+automatically:
+
+```text
+/plugin marketplace add SagaPeak/artifacta-mcp
+/plugin install artifacta@artifacta
+```
+
+This bundles the same hosted MCP connection as the Quick start below plus the
+`persisting-outputs` skill (`/artifacta:persisting-outputs`, or it auto-triggers
+when a session has outputs worth saving). See the
+[plugin setup guide](https://docs.artifacta.io/mcp/install/claude-code-plugin).
+
 ## Quick start
 
 The fastest way to connect is the hosted server — no install, no API key:

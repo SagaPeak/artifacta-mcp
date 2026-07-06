@@ -103,7 +103,7 @@ describe("GET /.well-known/oauth-protected-resource (AG-05)", () => {
     // Default resourceUri keeps the /mcp path on `resource`.
     expect(body.resource).toBe("https://mcp.artifacta.io/mcp");
     expect(body.authorization_servers).toEqual([
-      "https://vliolvdztzcrtuolrgdi.supabase.co/auth/v1",
+      "https://artifacta.supabase.co/auth/v1",
     ]);
     // OIDC scopes only — Supabase Auth (the AS) rejects custom artifacts:*
     // scopes at /authorize. Artifact tool scopes are granted at consent/hook
@@ -117,6 +117,26 @@ describe("GET /.well-known/oauth-protected-resource (AG-05)", () => {
     // no token yet.
     const res = await fetch(`${base}${WELL_KNOWN}`, { method: "GET" });
     expect(res.status).toBe(200);
+  });
+
+  it("uses authorizationServer when passed explicitly", async () => {
+    const custom = await startHttpServer({
+      port: 0,
+      config: { apiKey: undefined, apiUrl: stub.url },
+      allowedOrigins: [ALLOWED_ORIGIN],
+      authorizationServer: "https://custom.example.test/auth/v1",
+    });
+    try {
+      const customBase = `http://127.0.0.1:${custom.port}`;
+      const res = await fetch(`${customBase}${WELL_KNOWN}`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { authorization_servers: string[] };
+      expect(body.authorization_servers).toEqual([
+        "https://custom.example.test/auth/v1",
+      ]);
+    } finally {
+      await custom.close();
+    }
   });
 
   // The metadata document lives at the resource's *origin* + well-known path,

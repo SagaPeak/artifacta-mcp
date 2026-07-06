@@ -13,6 +13,7 @@ import { setTelemetryMode } from "./telemetry/emitter.js";
 import { ArtifactaHttpClient } from "./http/client.js";
 import { setHttpClient } from "./http/instance.js";
 import { startHttpServer, DEFAULT_RESOURCE_URI } from "./http/transport.js";
+import { resolveAuthorizationServer } from "./http/authorization-server.js";
 import type { OAuthVerifier } from "./http/oauth.js";
 import { resolveOAuthConfig } from "./http/oauth-config.js";
 import { registerAllTools, registerAllResources } from "./tools/index.js";
@@ -55,6 +56,7 @@ if (args.includes("--help") || args.includes("-h")) {
       "             MCP_ALLOWED_ORIGINS=<a,b>              Comma-separated allowed Origin headers (http)",
       "             MCP_RESOURCE_URI=<url>                 Canonical OAuth resource URI (http; default mcp.artifacta.io/mcp)",
       "             SUPABASE_JWKS_URL=<url>                Supabase JWKS endpoint; set to enable OAuth JWT validation (http)",
+      "             SUPABASE_AUTH_BASE=<url>               OAuth AS base for PRM authorization_servers (http; default vanity URL)",
       "             MCP_OAUTH_CLIENT_ID=<id>               Registered MCP OAuth client_id; OAuth tokens must match it (http; required with OAuth, including DCR mode — fixed-client fallback + instant rollback)",
       "             MCP_OAUTH_DCR_ENABLED=1                Accept dynamically-registered OAuth clients (relax client_id binding to client_id-present + MCP aud; http)",
       "             ARTIFACTA_INTERNAL_API_URL=<url>       Private internal API base for OAuth-backed calls (http; required with OAuth)",
@@ -202,6 +204,7 @@ if (transportMode === "http") {
   let oauthVerifier: OAuthVerifier | undefined;
   let internalApiUrl: string | undefined;
   let internalSecret: string | undefined;
+  let authorizationServer: string | undefined;
   if (oauthRes.enabled) {
     if ("errors" in oauthRes) {
       process.stderr.write(
@@ -214,6 +217,9 @@ if (transportMode === "http") {
     oauthVerifier = oauthRes.config.verifier;
     internalApiUrl = oauthRes.config.internalApiUrl;
     internalSecret = oauthRes.config.internalSecret;
+    authorizationServer = resolveAuthorizationServer(
+      process.env.SUPABASE_AUTH_BASE
+    );
   }
 
   startHttpServer({
@@ -221,6 +227,7 @@ if (transportMode === "http") {
     config,
     allowedOrigins,
     resourceUri,
+    authorizationServer,
     oauthVerifier,
     internalApiUrl,
     internalSecret,

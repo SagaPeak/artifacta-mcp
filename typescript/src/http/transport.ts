@@ -37,6 +37,11 @@ import {
   SCOPE_DESTROY,
   type Principal,
 } from "./request-context.js";
+import {
+  DEFAULT_AUTHORIZATION_SERVER,
+} from "./authorization-server.js";
+
+export { DEFAULT_AUTHORIZATION_SERVER } from "./authorization-server.js";
 
 // JSON-RPC bodies are tool calls and small payloads (inline store_artifact is
 // the largest). 32 MiB is a generous process-protection ceiling; the REST API
@@ -52,11 +57,6 @@ export const DEFAULT_RESOURCE_URI = "https://mcp.artifacta.io/mcp";
 
 // RFC 9728 fixed location, served from the resource's origin (not under /mcp).
 const WELL_KNOWN_PATH = "/.well-known/oauth-protected-resource";
-
-// Supabase Auth is the OAuth 2.1 Authorization Server (HM-02). Trailing-slash-
-// free, matching the discovery base the spec advertises.
-const AUTHORIZATION_SERVER =
-  "https://vliolvdztzcrtuolrgdi.supabase.co/auth/v1";
 
 // PRM `scopes_supported` lists the scopes the Authorization Server (Supabase
 // Auth) accepts at /authorize. Supabase honors only OIDC scopes and rejects
@@ -85,6 +85,10 @@ export interface HttpServerOptions {
    * OAuth challenges advertise and what the protected-resource metadata reports.
    * Defaults to {@link DEFAULT_RESOURCE_URI}; cli.ts threads `MCP_RESOURCE_URI`. */
   resourceUri?: string;
+  /** OAuth 2.1 Authorization Server base URL advertised in PRM
+   * `authorization_servers`. Defaults to {@link DEFAULT_AUTHORIZATION_SERVER};
+   * cli.ts threads optional `SUPABASE_AUTH_BASE`. */
+  authorizationServer?: string;
   /** AG-07: validates Supabase OAuth JWTs. When omitted, OAuth is disabled and
    * only `ak_live_` bearers are accepted (a non-`ak_live_` bearer → 401). */
   oauthVerifier?: OAuthVerifier;
@@ -361,7 +365,9 @@ function route(opts: HttpServerOptions) {
       res.setHeader("Cache-Control", "no-store");
       sendJson(res, 200, {
         resource: resourceUri,
-        authorization_servers: [AUTHORIZATION_SERVER],
+        authorization_servers: [
+          opts.authorizationServer ?? DEFAULT_AUTHORIZATION_SERVER,
+        ],
         scopes_supported: SCOPES_SUPPORTED,
         bearer_methods_supported: ["header"],
       });

@@ -65,7 +65,10 @@ export const STORE_ARTIFACT_DESCRIPTION =
   "Path uploads are confined. The `path` argument is constrained to the launcher-configured " +
   "allow-list (default: the MCP server's CWD). Paths outside the allow-list, paths traversing " +
   "symlinks out of it, and paths to known-sensitive locations (`~/.ssh`, `~/.aws`, `/etc/`, " +
-  "etc.) are refused with `invalid_request`.\n\n" +
+  "etc.) are refused with `invalid_request`. `path` also only works when the MCP server runs " +
+  "on the same machine as the file — on the hosted server (mcp.artifacta.io) and the Claude " +
+  "Code plugin it resolves inside the remote server's filesystem, never the caller's machine, " +
+  "so use `content` (or `request_upload_url`) there.\n\n" +
   "For crash-safe retries, supply your own `idempotency_key` (any string ≤256 chars): a replay " +
   "within 24h returns the original artifact and never double-bills. If you omit it, the server " +
   "auto-generates one and returns it under `_meta.idempotency_key`, but that key protects only " +

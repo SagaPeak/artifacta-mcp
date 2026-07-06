@@ -4,6 +4,18 @@ All notable changes to `@artifacta-mcp/mcp` are documented here. The format foll
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- `store_artifact` description now states that `path` only works when the MCP
+  server runs on the same machine as the file — on the hosted server
+  (`mcp.artifacta.io`) and the Claude Code plugin it resolves inside the
+  remote container, so agents are steered to `content` / `request_upload_url`
+  there. The bundled `persisting-outputs` skill branches the same way. Fixes
+  plugin E2E confusion where agents called `store_artifact.path` against the
+  hosted server.
+
 ## [1.0.4] — 2026-06-26
 
 Artifact Pages tools. Agents can now publish and unpublish shareable artifact

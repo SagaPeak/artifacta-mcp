@@ -41,12 +41,21 @@ Don't persist:
 ## Storing artifacts
 
 `store_artifact` uploads a file in one call. It requires `filename`, plus
-exactly one of:
-- `content` — base64-encoded bytes, for anything under 10 MB.
-- `path` — an absolute local path (inside the launcher's allow-list) that
-  the server reads and streams; handles up to 500 MB.
+exactly one of `content` or `path` — and which one is safe depends on where
+the MCP server runs:
 
-Files larger than 500 MB need the large-file flow below.
+**Hosted MCP or the Claude Code plugin (`mcp.artifacta.io`): never use
+`path`.** The server runs remotely, so a `path` argument resolves on the
+server's own container filesystem — not the machine your files are on — and
+fails or reads the wrong file. Always send `content` (base64-encoded bytes,
+up to 10 MB decoded); for anything larger, use the large-file flow below.
+
+**Local stdio server only** (launched on this machine via npx/pipx with an
+`ak_live_` key): `path` — an absolute local path inside the server's
+`--allow-path` allow-list — streams the file server-side and handles up to
+500 MB. If you aren't certain the server is local, use `content`.
+
+Files larger than 500 MB always need the large-file flow below.
 
 Attribution and organization, all optional:
 - `session_id` — groups this artifact with others from the same run.
@@ -116,10 +125,11 @@ output is meant to be browsed as a page rather than downloaded as a file.
 
 ## Large files
 
-For files over 500 MB (up to 5 GB, Pro only), `store_artifact` isn't an
-option — use `request_upload_url` to reserve a presigned R2 PUT URL, PUT the
-bytes there yourself, then call `complete_upload` with the returned
-`artifact_id` to finalize it. This flow does not support idempotency keys:
+For files over 500 MB (up to 5 GB) — or anything over the 10 MB `content`
+cap on a hosted/plugin connection, where `path` is unavailable —
+`store_artifact` isn't an option. Use `request_upload_url` (Pro only) to
+reserve a presigned R2 PUT URL, PUT the bytes there yourself, then call
+`complete_upload` with the returned `artifact_id` to finalize it. This flow does not support idempotency keys:
 if a call fails with a server or network error, don't blindly retry — call
 `list_artifacts` with the same `session_id`/`agent_id` first to check
 whether a pending artifact was already created.

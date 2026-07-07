@@ -17,7 +17,8 @@ import {
 import { createRemoteOAuthVerifier } from "../../src/http/oauth.js";
 import { revokeConnection, clearRevocations } from "../../src/http/revocation.js";
 import { registerAllTools, registerAllResources } from "../../src/tools/index.js";
-import { clearRegistry } from "../../src/safety/registry.js";
+import { clearRegistry, getFilteredTools } from "../../src/safety/registry.js";
+import { requiredScopeForTool, SCOPE_DESTROY } from "../../src/safety/scopes.js";
 import { clearResourceRegistry } from "../../src/resources/registry.js";
 import { startStubServer, type StartedStub } from "./stub-server.js";
 import { setLogWriter, resetLogWriter } from "../../src/log/logger.js";
@@ -28,6 +29,21 @@ const CLIENT_ID = "mcp-client-int";
 const INTERNAL_SECRET = "integration-internal-secret";
 const VALID_KEY = "ak_live_0123456789abcdefghijklmnopqrstuv";
 const KID = "integration-kid";
+
+/**
+ * All tool names currently in the safety registry (populated by
+ * registerAllTools() in beforeAll), sorted. hasConfirmations: true with
+ * allowDestructive: true returns every registration unfiltered.
+ */
+function registeredToolNames(): string[] {
+  return getFilteredTools({
+    hasConfirmations: true,
+    allowDestructive: true,
+    writeConfirmRequired: false,
+  })
+    .map((tool) => tool.name)
+    .sort();
+}
 const ACCEPT = "application/json, text/event-stream";
 
 type Keys = Awaited<ReturnType<typeof generateKeyPair>>;
@@ -148,12 +164,24 @@ afterAll(async () => {
 });
 
 describe("AG-07 integration — remote JWKS validation + scope gating", () => {
-  it("a read+write token (validated via remote JWKS) lists 8 tools", async () => {
+  it("a read+write token (validated via remote JWKS) lists every registered non-destroy tool", async () => {
     const t = await mint({ scope: "artifacts:read artifacts:write" });
     const res = await post(t, { method: "tools/list", params: {} }, 1);
     expect(res.status).toBe(200);
     const body = (await res.json()) as RpcEnvelope<{ tools: Array<{ name: string }> }>;
-    expect(body.result!.tools).toHaveLength(8);
+    // Derive the expectation from the safety registry instead of a hardcoded
+    // count, so adding a tool doesn't silently break the nightly suite. The
+    // registry's safety classes are themselves pinned by
+    // test/http-oauth-scopes.test.ts, so this stays non-circular.
+    const listed = body.result!.tools.map((tool) => tool.name).sort();
+    const expected = registeredToolNames().filter(
+      (name) => requiredScopeForTool(name) !== SCOPE_DESTROY,
+    );
+    expect(listed).toEqual(expected);
+    expect(listed.length).toBeGreaterThan(0);
+    for (const destroyTool of ["create_download_link", "delete_artifact", "seal_session"]) {
+      expect(listed).not.toContain(destroyTool);
+    }
   });
 
   it("a write tool reaches the INTERNAL API with internal headers and no JWT", async () => {
@@ -221,8 +249,13 @@ describe("AG-07 integration — ak_live_ regression", () => {
   it("an ak_live_ bearer keeps full tools, hits the PUBLIC API, no internal headers", async () => {
     const beforeInternal = internalStub.requestLog.length;
     const list = await post(VALID_KEY, { method: "tools/list", params: {} }, 8);
-    const listBody = (await list.json()) as RpcEnvelope<{ tools: unknown[] }>;
-    expect(listBody.result!.tools).toHaveLength(11);
+    const listBody = (await list.json()) as RpcEnvelope<{ tools: Array<{ name: string }> }>;
+    // ak_live_ keys are full-access: the listing must match the registry
+    // exactly, destroy tools included (count derived, not hardcoded — see the
+    // scope-gating test above).
+    const listedNames = listBody.result!.tools.map((tool) => tool.name).sort();
+    expect(listedNames).toEqual(registeredToolNames());
+    expect(listedNames).toContain("delete_artifact");
 
     const before = publicStub.requestLog.length;
     const call = await post(VALID_KEY, { method: "tools/call", params: { name: "whoami", arguments: {} } }, 9);

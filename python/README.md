@@ -187,7 +187,7 @@ crew that hands a stored artifact from one agent to the next.
 
 ## Tool surface
 
-Same eleven tools as the TypeScript package:
+Same thirteen tools as the TypeScript package:
 
 | Tool | Safety | Notes |
 |------|--------|-------|
@@ -202,6 +202,8 @@ Same eleven tools as the TypeScript package:
 | `create_download_link` | destructive | Public URL — gated behind `--allow-destructive` for non-compliant clients |
 | `delete_artifact` | destructive | Soft-delete; hard-delete after 30 days |
 | `seal_session` | destructive | **Irreversible** — no `unseal` endpoint |
+| `publish_artifact` | writeIdempotent | Publish a public page at `artifacta.io/a/{slug}`; unlisted by default |
+| `unpublish_artifact` | writeIdempotent | Take down a public page; the artifact itself is untouched |
 
 The destructive-tool gating engine (`safety/registry`) hides destructive
 tools from clients that do not advertise `experimental.confirmations` in
@@ -242,13 +244,22 @@ The error message includes structured remediation:
 
 ### `delete_artifact` / `seal_session` / `create_download_link` not visible
 
-By design — these are destructive and hidden from clients that do not
-advertise `experimental.confirmations`. Either:
+Local stdio only. By design — these are destructive and hidden from clients
+that do not advertise `experimental.confirmations`. Either:
 
 - Use a client that advertises the capability (it gets the tool with
   `requiresConfirmation: true`), or
 - Pass `--allow-destructive` at launch (you give up the consent surface and
   accept the per-call stderr audit line as your only signal).
+
+### Hosted OAuth: tool call fails with `insufficient_scope`
+
+Hosted connections (`mcp.artifacta.io`) don't hide tools — all thirteen are
+always in `tools/list`. Instead, calling a tool your OAuth grant doesn't cover
+returns a tool error with code `insufficient_scope` naming the missing scope
+(`artifacts:read` ⊆ `artifacts:write` ⊆ `artifacts:destroy`). Re-authorize
+with the needed scope (e.g. `artifacts:destroy` for `delete_artifact`) to fix
+it.
 
 ### `invalid_request: Path '…' is outside the MCP server's allow-list`
 

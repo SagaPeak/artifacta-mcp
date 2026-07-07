@@ -109,7 +109,11 @@ sign in through your browser — no API key to copy. The one-liner
 `claude mcp add --transport http artifacta https://mcp.artifacta.io/mcp` self-registers
 a public OAuth client via Dynamic Client Registration (PKCE, **no client secret**);
 a fixed-`clientId` `add-json` form is the manual fallback. You choose the tool
-permissions (read / write / destroy) on a consent screen. Full setup, including
+permissions (read / write / destroy) on a consent screen. These scopes are
+nested — `artifacts:read` ⊆ `artifacts:write` ⊆ `artifacts:destroy`. All tools
+remain visible in `tools/list` regardless of granted scope; calling a tool the
+token wasn't granted for returns an `insufficient_scope` tool error naming the
+missing scope — re-authorize with the broader scope to fix it. Full setup, including
 both forms and the `/mcp` → Authenticate flow, is documented here:
 
 **[Connect Claude Code (Hosted)](https://docs.artifacta.io/mcp/install/claude-code-hosted)**

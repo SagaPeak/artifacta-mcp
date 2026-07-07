@@ -233,13 +233,14 @@ describe("AG-07 invalid JWTs → 401", () => {
 });
 
 describe("AG-07 read token", () => {
-  it("tools/list exposes exactly the 5 read tools", async () => {
+  it("tools/list advertises all 13 tools (out-of-scope tools are call-gated, not hidden)", async () => {
     const t = await mint({ scope: "artifacts:read" });
     const res = await postBearer(t, mcpBody("tools/list", {}, 2));
     expect(res.status).toBe(200);
     const body = (await res.json()) as RpcEnvelope<{ tools: Array<{ name: string }> }>;
-    const names = body.result!.tools.map((x) => x.name).sort();
-    expect(names).toEqual([...READ_TOOLS].sort());
+    const names = body.result!.tools.map((x) => x.name);
+    expect(new Set(names)).toEqual(new Set([...READ_TOOLS, ...WRITE_TOOLS, ...DESTROY_TOOLS]));
+    expect(names).toHaveLength(13);
   });
 
   it("resources/list is non-empty (read grants resources)", async () => {
@@ -299,14 +300,13 @@ describe("AG-07 read token", () => {
 });
 
 describe("AG-07 read+write token", () => {
-  it("tools/list exposes 10 tools and no destroy tools", async () => {
+  it("tools/list advertises all 13 tools (destroy tools visible but call-gated)", async () => {
     const t = await mint({ scope: "artifacts:read artifacts:write" });
     const res = await postBearer(t, mcpBody("tools/list", {}, 7));
     const body = (await res.json()) as RpcEnvelope<{ tools: Array<{ name: string }> }>;
     const names = body.result!.tools.map((x) => x.name);
-    expect(new Set(names)).toEqual(new Set([...READ_TOOLS, ...WRITE_TOOLS]));
-    expect(names).toHaveLength(10);
-    expect(names.some((n) => DESTROY_TOOLS.includes(n))).toBe(false);
+    expect(names).toHaveLength(13);
+    expect(names.some((n) => DESTROY_TOOLS.includes(n))).toBe(true);
   });
 
   it("a write tool reaches the internal API with internal headers, not the JWT", async () => {
@@ -367,11 +367,11 @@ describe("AG-07 read+write+destroy token", () => {
 });
 
 describe("AG-07 empty/garbage scope grant", () => {
-  it("a token with only OIDC scopes sees no tools and no resources", async () => {
+  it("a token with only OIDC scopes still sees the tool list but every call is denied", async () => {
     const t = await mint({ scope: "openid profile email" });
     const list = await postBearer(t, mcpBody("tools/list", {}, 12));
     const listBody = (await list.json()) as RpcEnvelope<{ tools: unknown[] }>;
-    expect(listBody.result!.tools).toHaveLength(0);
+    expect(listBody.result!.tools).toHaveLength(13);
 
     const resList = await postBearer(t, mcpBody("resources/list", {}, 13));
     const resBody = (await resList.json()) as RpcEnvelope<{ resources: unknown[] }>;
@@ -648,11 +648,11 @@ describe("AG-DCR-02 DCR mode (client binding relaxed to presence + aud)", () => 
     expect((await postDcr(t, 34)).status).toBe(401);
   });
 
-  it("still grants tools by scope (a dynamic read token sees exactly the 5 read tools)", async () => {
+  it("still advertises all tools in DCR mode (scope enforcement is at call time)", async () => {
     const t = await mint({ scope: "artifacts:read", clientId: "dynamic-client-abc123" });
     const res = await postDcr(t, 35);
     const body = (await res.json()) as RpcEnvelope<{ tools: Array<{ name: string }> }>;
-    expect(body.result!.tools.map((x) => x.name).sort()).toEqual([...READ_TOOLS].sort());
+    expect(body.result!.tools).toHaveLength(13);
   });
 
   it("prod config (dcrEnabled + expectedClientId both set, parallel support): an arbitrary client still validates", async () => {

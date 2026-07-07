@@ -129,14 +129,15 @@ function wireHandlers(srv: ArtifactaServer): void {
       allowDestructive: flags.allowDestructive,
       writeConfirmRequired: flags.writeConfirmRequired,
     });
-    // AG-07: under an OAuth scope gate, hide tools the token does not grant.
-    // The HTTP transport sets allowDestructive=true for OAuth principals so the
-    // confirmation-based filter above never pre-hides a destructive tool before
-    // this scope filter runs — the gate is the single authority.
-    const gate = srv.getScopeGate();
-    if (gate) {
-      return { tools: tools.filter((t) => isToolGranted(t.name, gate)) };
-    }
+    // AG-07: under an OAuth scope gate, out-of-scope tools stay ADVERTISED.
+    // Hiding them made clients silently route around the scope (e.g. fall back
+    // to a full-access CLI key) instead of surfacing the grant gap; the
+    // call-time gate below is the enforcement point and returns an
+    // `insufficient_scope` tool error naming the missing scope, which clients
+    // can relay to the user as a re-auth prompt. The HTTP transport sets
+    // allowDestructive=true for OAuth principals so the confirmation-based
+    // filter above never pre-hides a destructive tool — the gate is the single
+    // authority.
     return { tools };
   });
 

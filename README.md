@@ -34,7 +34,9 @@ automatically:
 
 This bundles the same hosted MCP connection as the Quick start below plus the
 `persisting-outputs` skill (`/artifacta:persisting-outputs`, or it auto-triggers
-when a session has outputs worth saving). See the
+when a session has outputs worth saving). The plugin is versioned by git SHA
+(no `version` field) and is updated with `/plugin marketplace update
+artifacta`. See the
 [plugin setup guide](https://docs.artifacta.io/mcp/install/claude-code-plugin).
 
 ## Quick start
@@ -89,9 +91,11 @@ troubleshooting: [TypeScript](./typescript/README.md) ·
 | `get_artifact_download_url` | Get a presigned download URL (1h expiry) |
 | `list_artifacts` | List/filter artifacts by session, agent, or metadata |
 | `list_sessions` | List active sessions |
-| `seal_session` | Seal a session so no further artifacts can be added |
+| `seal_session` | Seal a session so no further artifacts can be added (gated behind `--allow-destructive`) |
 | `create_download_link` | Create a public expiring share link (gated behind `--allow-destructive`) |
-| `delete_artifact` | Soft-delete an artifact (gated behind write confirmation) |
+| `delete_artifact` | Soft-delete an artifact (gated behind `--allow-destructive`, same gate as `create_download_link`) |
+| `publish_artifact` | Publish an artifact as a public page at `artifacta.io/a/{slug}` (Artifact Pages); idempotent, unlisted by default |
+| `unpublish_artifact` | Take down an artifact's public page; the artifact itself is untouched; idempotent |
 
 Plus MCP resources for `whoami`, artifact metadata, artifact bytes, and
 sessions.
@@ -99,7 +103,18 @@ sessions.
 Safety defaults: local-file uploads are confined to an explicit `--allow-path`
 allow-list, and destructive tools (public share links, deletes, session seals)
 are hidden from clients that can't confirm writes unless `--allow-destructive`
-is passed.
+is passed. `publish_artifact` and `unpublish_artifact` are idempotent write
+operations, not destructive ones — they are not gated behind
+`--allow-destructive`.
+
+Hosted OAuth connections (`mcp.artifacta.io`) add a second layer: the consent
+screen grants one of three scopes — `artifacts:read` ⊆ `artifacts:write` ⊆
+`artifacts:destroy`. All 13 tools are always advertised in `tools/list`;
+calling a tool the token wasn't granted for returns a tool error with code
+`insufficient_scope` naming the missing scope, and the fix is to re-authorize
+with the broader scope. Scope gating applies only to hosted OAuth —
+`ak_live_` API keys and local stdio remain full-access, using
+`--allow-destructive` / confirmation flags instead.
 
 ## Framework integrations
 

@@ -18,6 +18,11 @@ outputs.
 - **`persisting-outputs` skill** — auto-triggers when a run produces outputs
   worth keeping (reports, datasets, generated files, analysis results). Also
   invocable directly as `/artifacta:persisting-outputs`.
+- **`capture-transcript` skill** — auto-triggers when you ask to save or
+  upload the current session's transcript (conversation log). Locates and
+  verifies the live transcript, pushes a tagged snapshot, and can offer to
+  set up automatic capture at session end (opt-in). Also invocable directly
+  as `/artifacta:capture-transcript`.
 
 ## Authentication
 

@@ -69,6 +69,11 @@ Attribution and organization, all optional:
 - `ttl` — a duration like `"7d"` / `"30d"`, or `"never"` (Pro only).
   Defaults to the plan default if omitted.
 - `content_type` — guessed from the filename if omitted.
+- `transcript` — set `true` when storing a conversation/session log: it
+  tags the artifact `metadata.type=transcript` and defaults the content
+  type to `application/x-ndjson` (explicit values win). To capture the
+  *current Claude Code session's* transcript, use the `capture-transcript`
+  skill instead — it handles locating and verifying the live file.
 
 For crash-safe retries pass your own `idempotency_key` (≤256 chars); a
 replay within 24h returns the original artifact instead of creating a
@@ -97,7 +102,8 @@ nothing more will be added to it.
 
 - `list_artifacts` — filter by `session_id`, `agent_id`, `filename` (exact
   match), `content_type`, `created_after` / `created_before` (ISO 8601), or
-  `metadata.<key>=<value>` (multiple metadata filters require Pro). Results
+  `metadata.<key>=<value>` (multiple metadata filters require Pro), or
+  `transcript: true` to list only transcript-tagged artifacts. Results
   are newest-first with a `next_cursor` for pagination. Use this to discover
   what a session or agent produced when you don't have the artifact ID.
 - `get_artifact` — metadata only (filename, content type, size, hash,

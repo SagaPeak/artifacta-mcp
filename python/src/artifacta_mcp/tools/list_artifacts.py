@@ -28,6 +28,14 @@ INPUT_SCHEMA = {
         "content_type": {"type": "string"},
         "created_after": {"type": "string", "format": "date-time"},
         "created_before": {"type": "string", "format": "date-time"},
+        "transcript": {
+            "type": "boolean",
+            "default": False,
+            "description": (
+                'Filters for transcript artifacts by adding metadata.type="transcript" '
+                "unless metadata.type is explicitly provided."
+            ),
+        },
         "metadata": {
             "type": "object",
             "patternProperties": {METADATA_KEY_PATTERN: {"type": "string"}},
@@ -68,14 +76,31 @@ def build_params(args: dict[str, Any] | None) -> dict[str, Any]:
             params[key] = v
     limit = a.get("limit")
     params["limit"] = int(limit) if isinstance(limit, int) else LIST_LIMIT_DEFAULT
-    metadata = a.get("metadata")
-    if isinstance(metadata, dict):
+    metadata = dict(a["metadata"]) if isinstance(a.get("metadata"), dict) else {}
+    if a.get("transcript") is True and "type" not in metadata:
+        metadata["type"] = "transcript"
+    if metadata:
         for k, v in metadata.items():
             params[f"metadata.{k}"] = str(v)
     return params
 
 
+def _local_invalid_request(message: str) -> dict[str, Any]:
+    return {
+        "isError": True,
+        "content": [
+            {
+                "type": "text",
+                "text": f"Bad arguments: {message}. Adjust the inputs and call again.",
+            }
+        ],
+        "_meta": {"code": "invalid_request", "status": 400, "retry_hint": "do_not_retry"},
+    }
+
+
 async def handler(args: dict[str, Any] | None, _ctx) -> dict[str, Any]:
+    if args is not None and "transcript" in args and not isinstance(args["transcript"], bool):
+        return _local_invalid_request("`transcript` must be a boolean")
     client = get_client()
     params = build_params(args)
     try:

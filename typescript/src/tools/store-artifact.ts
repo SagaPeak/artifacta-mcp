@@ -19,6 +19,7 @@ import { localInvalidRequest, type StoreArtifactArgs } from "./store-artifact-sh
 import { storeArtifactContent } from "./store-artifact-content.js";
 import { storeArtifactPath } from "./store-artifact-path.js";
 import { SESSION_ID_PATTERN, isSessionId } from "../ids/formats.js";
+import { resolveTranscriptWriteDefaults } from "./transcript.js";
 
 // Metadata key regex per CLAUDE.md — reject dots and leading digits at the schema.
 const METADATA_KEY_PATTERN = "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$";
@@ -102,6 +103,12 @@ export const STORE_ARTIFACT_TOOL: Tool = {
         type: "string",
         description: "MIME type. If omitted, guessed from filename.",
       },
+      transcript: {
+        type: "boolean",
+        default: false,
+        description:
+          'Marks this artifact as a transcript: auto-fills metadata.type="transcript" and defaults content_type to application/x-ndjson, both overridable by explicit content_type/metadata arguments.',
+      },
       session_id: { type: "string", pattern: SESSION_ID_PATTERN },
       agent_id: { type: "string" },
       metadata: {
@@ -137,6 +144,12 @@ export const storeArtifactHandler = async (
   ctx?: ToolCallContext
 ): Promise<CallToolResult> => {
   const a: Record<string, unknown> = args ?? {};
+
+  // Schema validation is not guaranteed before direct handler dispatch. Reject
+  // a present non-boolean before client acquisition or any path/file work.
+  if (a.transcript !== undefined && typeof a.transcript !== "boolean") {
+    return localInvalidRequest("`transcript` must be a boolean");
+  }
 
   // The MCP SDK does not validate inputSchema before dispatch, so a
   // non-compliant client can send wrong types / out-of-range values / both or
@@ -201,15 +214,14 @@ export const storeArtifactHandler = async (
     if (metaError) return localInvalidRequest(metaError);
   }
 
-  // `model` shorthand folds into `metadata.model` unless the caller already set
-  // that key explicitly in `metadata` (explicit metadata wins — see tool
-  // description). Build a fresh metadata object rather than mutating `a.metadata`.
-  const metadata: Record<string, string> = {
-    ...(a.metadata as Record<string, string> | undefined),
-  };
-  if (typeof a.model === "string" && metadata.model === undefined) {
-    metadata.model = a.model;
-  }
+  // Fold model shorthand and transcript defaults in one copied merge before
+  // dispatch so the content and path upload branches cannot drift.
+  const resolved = resolveTranscriptWriteDefaults({
+    contentType: a.content_type as string | undefined,
+    metadata: a.metadata as Record<string, string> | undefined,
+    model: a.model as string | undefined,
+    transcript: (a.transcript as boolean | undefined) ?? false,
+  });
 
   // Provenance auto-stamp (AF_MCP-PROV): publish_artifact_page re-derives its
   // provenance receipt from the artifact's own `agent_id` / `metadata.model` at
@@ -223,10 +235,10 @@ export const storeArtifactHandler = async (
     filename: a.filename as string,
     content: hasContent ? (a.content as string) : undefined,
     path: hasPath ? (a.path as string) : undefined,
-    content_type: a.content_type as string | undefined,
+    content_type: resolved.contentType,
     session_id: a.session_id as string | undefined,
     agent_id: agentId,
-    metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+    metadata: resolved.metadata,
     ttl: a.ttl as string | undefined,
     idempotency_key: a.idempotency_key as string | undefined,
   };

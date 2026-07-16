@@ -62,6 +62,7 @@ def _make_full_client_stub() -> type:
             ttl=None,
             idempotency_key=None,
             presigned=False,
+            transcript=False,
         ): ...
         def get(self, artifact_id): ...
         def delete(self, artifact_id): ...
@@ -116,6 +117,29 @@ def test_compat_check_detects_old_push_without_content_type_kwarg():
     assert "content_type" in error
     assert "push()" in error
     assert "missing required parameter" in error
+
+
+def test_compat_check_detects_push_without_transcript_kwarg():
+    class PreTranscriptClient(_make_full_client_stub()):
+        def push(
+            self,
+            path=None,
+            *,
+            content=None,
+            filename=None,
+            content_type=None,
+            session_id=None,
+            agent_id=None,
+            metadata=None,
+            ttl=None,
+            idempotency_key=None,
+            presigned=False,
+        ): ...
+
+    error = check_sdk_compatibility(PreTranscriptClient)
+    assert error is not None
+    assert "transcript" in error
+    assert "push()" in error
 
 
 def test_compat_check_detects_old_sdk_missing_request_upload_url():

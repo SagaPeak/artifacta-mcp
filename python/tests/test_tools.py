@@ -165,6 +165,7 @@ class _FakeClient:
         ttl=None,
         idempotency_key=None,
         presigned=False,
+        transcript=False,
     ):
         # Mirrors the REAL SDK signature so a future drift in the call site
         # (e.g. wrong kwarg name) fails the test instead of being silently
@@ -181,6 +182,7 @@ class _FakeClient:
             ttl=ttl,
             idempotency_key=idempotency_key,
             presigned=presigned,
+            transcript=transcript,
         )
         if "push" in self.raise_on:
             raise self.raise_on["push"]
@@ -418,6 +420,52 @@ def test_list_artifacts_forwards_filters(fake_client):
     assert params["limit"] == 25
 
 
+def test_list_artifacts_transcript_schema_and_safe_registration(fake_client):
+    reg = safety.get_tool_registration("list_artifacts")
+    assert reg.safety == "safe"
+    assert reg.input_schema["properties"]["transcript"] == {
+        "type": "boolean",
+        "default": False,
+        "description": (
+            'Filters for transcript artifacts by adding metadata.type="transcript" '
+            "unless metadata.type is explicitly provided."
+        ),
+    }
+
+
+def test_list_artifacts_normalizes_transcript_filter_without_mutation(fake_client):
+    metadata = {"env": "prod"}
+    result = _call(
+        "list_artifacts",
+        {"session_id": "ses_a", "transcript": True, "metadata": metadata},
+    )
+    _assert_mcp_ok_shape(result)
+    params = fake_client.calls[-1].kwargs["params"]
+    assert params["session_id"] == "ses_a"
+    assert params["metadata.env"] == "prod"
+    assert params["metadata.type"] == "transcript"
+    assert "transcript" not in params
+    assert metadata == {"env": "prod"}
+
+
+@pytest.mark.parametrize("explicit_type", ["conversation", ""])
+def test_list_artifacts_explicit_type_wins(fake_client, explicit_type):
+    _call(
+        "list_artifacts",
+        {"transcript": True, "metadata": {"type": explicit_type}},
+    )
+    params = fake_client.calls[-1].kwargs["params"]
+    assert params["metadata.type"] == explicit_type
+    assert "transcript" not in params
+
+
+@pytest.mark.parametrize("value", [None, "true", 0, 1, {}, []])
+def test_list_artifacts_rejects_non_boolean_transcript_before_io(fake_client, value):
+    result = _call("list_artifacts", {"transcript": value})
+    _assert_mcp_err_shape(result, "invalid_request")
+    assert fake_client.calls == []
+
+
 def test_get_artifact_download_url_calls_endpoint(fake_client):
     result = _call("get_artifact_download_url", {"artifact_id": "art_aaaaaaaaaaaaaaaa"})
     _assert_mcp_ok_shape(result, "download_url")
@@ -444,6 +492,26 @@ def test_store_artifact_content_branch_pushes_bytes(fake_client):
     assert last.kwargs["filename"] == "hello.txt"
     # Idempotency-Key auto-injected and surfaced in _meta
     assert result["_meta"]["idempotency_key"].startswith("mcp_")
+
+
+def test_store_artifact_content_branch_delegates_transcript_to_sdk(fake_client):
+    payload = base64.b64encode(b'{"role":"user"}\n').decode()
+    original_metadata = {"env": "prod"}
+    args = {
+        "filename": "transcript.jsonl",
+        "content": payload,
+        "metadata": original_metadata,
+        "transcript": True,
+    }
+    result = _call("store_artifact", args)
+    _assert_mcp_ok_shape(result, "art_bbbbbbbbbbbbbbbb")
+    last = fake_client.calls[-1]
+    assert last.kwargs["transcript"] is True
+    assert last.kwargs["content_type"] is None
+    assert last.kwargs["metadata"] == {"env": "prod"}
+    assert last.kwargs["metadata"] is not original_metadata
+    assert original_metadata == {"env": "prod"}
+    assert "transcript" not in result.get("structuredContent", {})
 
 
 def test_store_artifact_defaults_agent_id_to_mcp_when_no_client_name(fake_client):
@@ -545,6 +613,31 @@ def test_store_artifact_path_branch_with_confinement(fake_client, tmp_path, monk
     assert last.kwargs["path"] is None
     assert last.kwargs["content"] == b"abcdef"
     assert last.kwargs["filename"] == "in.bin"
+
+
+def test_store_artifact_path_branch_delegates_transcript_to_sdk(fake_client, tmp_path):
+    f = tmp_path / "session.jsonl"
+    f.write_bytes(b'{"role":"assistant"}\n')
+    allowlist.set_allow_roots([os.path.realpath(str(tmp_path))])
+    result = _call(
+        "store_artifact",
+        {"filename": "session.jsonl", "path": str(f), "transcript": True},
+    )
+    _assert_mcp_ok_shape(result)
+    last = fake_client.calls[-1]
+    assert last.method == "push"
+    assert last.kwargs["transcript"] is True
+    assert last.kwargs["content_type"] is None
+
+
+@pytest.mark.parametrize("value", [None, "true", 0, 1, {}, []])
+def test_store_artifact_rejects_non_boolean_transcript_before_sdk(fake_client, value):
+    result = _call(
+        "store_artifact",
+        {"filename": "session.jsonl", "content": "e30=", "transcript": value},
+    )
+    _assert_mcp_err_shape(result, "invalid_request")
+    assert fake_client.calls == []
 
 
 def test_store_artifact_path_branch_denies_outside_allow_list(fake_client, tmp_path):

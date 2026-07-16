@@ -1,0 +1,93 @@
+{
+  "$schema_note": "Canonical AF_TRANSCRIPT v1 store/list schema properties and merge cases consumed by both MCP runtimes.",
+  "store_schema_property": {
+    "type": "boolean",
+    "default": false,
+    "description": "Marks this artifact as a transcript: auto-fills metadata.type=\"transcript\" and defaults content_type to application/x-ndjson, both overridable by explicit content_type/metadata arguments."
+  },
+  "invalid_raw_values": [null, "true", 0, 1, {}, []],
+  "list_schema_property": {
+    "type": "boolean",
+    "default": false,
+    "description": "Filters for transcript artifacts by adding metadata.type=\"transcript\" unless metadata.type is explicitly provided."
+  },
+  "store_cases": [
+    {
+      "id": "omitted-preserves-absences",
+      "input": {},
+      "expected": {"content_type": null, "metadata": null}
+    },
+    {
+      "id": "false-preserves-values",
+      "input": {"transcript": false, "metadata": {"env": "prod"}},
+      "expected": {"content_type": null, "metadata": {"env": "prod"}}
+    },
+    {
+      "id": "true-fills-both-defaults",
+      "input": {"transcript": true},
+      "expected": {"content_type": "application/x-ndjson", "metadata": {"type": "transcript"}}
+    },
+    {
+      "id": "true-preserves-unrelated-metadata",
+      "input": {"transcript": true, "metadata": {"env": "prod"}},
+      "expected": {"content_type": "application/x-ndjson", "metadata": {"env": "prod", "type": "transcript"}}
+    },
+    {
+      "id": "explicit-content-type-wins-independently",
+      "input": {"transcript": true, "content_type": "application/jsonl"},
+      "expected": {"content_type": "application/jsonl", "metadata": {"type": "transcript"}}
+    },
+    {
+      "id": "explicit-metadata-type-wins-independently",
+      "input": {"transcript": true, "metadata": {"type": "conversation"}},
+      "expected": {"content_type": "application/x-ndjson", "metadata": {"type": "conversation"}}
+    },
+    {
+      "id": "both-explicit-values-win",
+      "input": {"transcript": true, "content_type": "text/plain", "metadata": {"type": "log", "env": "dev"}},
+      "expected": {"content_type": "text/plain", "metadata": {"type": "log", "env": "dev"}}
+    },
+    {
+      "id": "empty-explicit-type-wins",
+      "input": {"transcript": true, "metadata": {"type": ""}},
+      "expected": {"content_type": "application/x-ndjson", "metadata": {"type": ""}}
+    },
+    {
+      "id": "model-shorthand-folds-in-same-merge",
+      "input": {"transcript": true, "model": "claude-5", "metadata": {"stage": "final"}},
+      "expected": {"content_type": "application/x-ndjson", "metadata": {"stage": "final", "model": "claude-5", "type": "transcript"}}
+    }
+  ],
+  "list_cases": [
+    {
+      "id": "omitted-preserves-absences",
+      "input": {},
+      "expected_metadata": null
+    },
+    {
+      "id": "false-preserves-values",
+      "input": {"transcript": false, "metadata": {"env": "prod"}},
+      "expected_metadata": {"env": "prod"}
+    },
+    {
+      "id": "true-adds-type-filter",
+      "input": {"transcript": true},
+      "expected_metadata": {"type": "transcript"}
+    },
+    {
+      "id": "true-preserves-unrelated-metadata",
+      "input": {"transcript": true, "metadata": {"env": "prod"}},
+      "expected_metadata": {"env": "prod", "type": "transcript"}
+    },
+    {
+      "id": "explicit-type-wins",
+      "input": {"transcript": true, "metadata": {"type": "conversation", "env": "prod"}},
+      "expected_metadata": {"type": "conversation", "env": "prod"}
+    },
+    {
+      "id": "empty-explicit-type-wins",
+      "input": {"transcript": true, "metadata": {"type": ""}},
+      "expected_metadata": {"type": ""}
+    }
+  ]
+}

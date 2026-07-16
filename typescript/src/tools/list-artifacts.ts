@@ -2,6 +2,8 @@ import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { getHttpClient } from "../http/instance.js";
 import { translateHttpFailure } from "../errors/translate.js";
 import { registerTool } from "../safety/registry.js";
+import { localInvalidRequest } from "./store-artifact-shared.js";
+import { resolveTranscriptListFilter } from "./transcript.js";
 
 // Plan §2.2 description — verbatim. The plan text is the contract.
 export const LIST_ARTIFACTS_DESCRIPTION =
@@ -23,6 +25,12 @@ export const LIST_ARTIFACTS_TOOL: Tool = {
       content_type: { type: "string" },
       created_after: { type: "string", format: "date-time" },
       created_before: { type: "string", format: "date-time" },
+      transcript: {
+        type: "boolean",
+        default: false,
+        description:
+          'Filters for transcript artifacts by adding metadata.type="transcript" unless metadata.type is explicitly provided.',
+      },
       metadata: {
         type: "object",
         patternProperties: {
@@ -64,6 +72,7 @@ export interface ListArtifactsArgs {
   created_after?: string;
   created_before?: string;
   metadata?: Record<string, string>;
+  transcript?: boolean;
   limit?: number;
   cursor?: string;
 }
@@ -83,6 +92,10 @@ export function buildListArtifactsPath(
 ): string {
   const params = new URLSearchParams();
   const a = args ?? {};
+  const metadata = resolveTranscriptListFilter({
+    metadata: a.metadata,
+    transcript: a.transcript ?? false,
+  });
 
   for (const key of FORWARD_STRING_KEYS) {
     const value = a[key];
@@ -95,8 +108,8 @@ export function buildListArtifactsPath(
     typeof a.limit === "number" ? a.limit : LIST_ARTIFACTS_LIMIT_DEFAULT;
   params.append("limit", String(limit));
 
-  if (a.metadata && typeof a.metadata === "object") {
-    for (const [key, value] of Object.entries(a.metadata)) {
+  if (metadata) {
+    for (const [key, value] of Object.entries(metadata)) {
       params.append(`metadata.${key}`, String(value));
     }
   }
@@ -114,6 +127,9 @@ export interface ListArtifactsResponse {
 export const listArtifactsHandler = async (
   args: Record<string, unknown> | undefined
 ): Promise<CallToolResult> => {
+  if (args && "transcript" in args && typeof args.transcript !== "boolean") {
+    return localInvalidRequest("`transcript` must be a boolean");
+  }
   const client = getHttpClient();
   const path = buildListArtifactsPath(args as ListArtifactsArgs | undefined);
   const result = await client.request<ListArtifactsResponse>({

@@ -104,6 +104,12 @@ describe("AF_MCP-3.1 — registration", () => {
     const props = s.properties as Record<string, Record<string, unknown>>;
     expect(props.content.contentEncoding).toBe("base64");
     expect(props.idempotency_key.maxLength).toBe(256);
+    expect(props.transcript).toEqual({
+      type: "boolean",
+      default: false,
+      description:
+        'Marks this artifact as a transcript: auto-fills metadata.type="transcript" and defaults content_type to application/x-ndjson, both overridable by explicit content_type/metadata arguments.',
+    });
     const meta = props.metadata as Record<string, Record<string, unknown>>;
     expect(Object.keys(meta.patternProperties)[0]).toBe("^[a-zA-Z][a-zA-Z0-9_-]{0,63}$");
   });
@@ -171,6 +177,39 @@ describe("AF_MCP-3.1 — content branch", () => {
     expect(opts.multipart).toBeUndefined();
   });
 
+  it("transcript true fills NDJSON and type once without mutating input", async () => {
+    mockRequest.mockResolvedValueOnce(okResult());
+    const metadata = { env: "prod" };
+    const args = {
+      filename: "session.jsonl",
+      content: Buffer.from("x").toString("base64"),
+      metadata,
+      transcript: true,
+    };
+    await storeArtifactHandler(args);
+    const body = mockRequest.mock.calls[0][0].body;
+    expect(body.content_type).toBe("application/x-ndjson");
+    expect(body.metadata).toEqual({ env: "prod", type: "transcript" });
+    expect(body.metadata).not.toBe(metadata);
+    expect(metadata).toEqual({ env: "prod" });
+    expect(body.transcript).toBeUndefined();
+  });
+
+  it("transcript defaults do not override explicit content_type or metadata.type", async () => {
+    mockRequest.mockResolvedValueOnce(okResult());
+    await storeArtifactHandler({
+      filename: "session.jsonl",
+      content: Buffer.from("x").toString("base64"),
+      content_type: "text/plain",
+      metadata: { type: "", env: "prod" },
+      transcript: true,
+    });
+    const body = mockRequest.mock.calls[0][0].body;
+    expect(body.content_type).toBe("text/plain");
+    expect(body.metadata).toEqual({ type: "", env: "prod" });
+    expect(body.transcript).toBeUndefined();
+  });
+
   it("3.1.03 — content decoding exactly at the 10 MB ceiling is accepted", async () => {
     mockRequest.mockResolvedValueOnce(okResult());
     const tenMb = Buffer.alloc(10 * 1024 * 1024).toString("base64");
@@ -212,6 +251,21 @@ describe("AF_MCP-3.1 — path branch", () => {
     // metadata is forwarded as a JSON string on the multipart path
     expect(opts.multipart.fields.metadata).toBe(JSON.stringify({ env: "prod" }));
     expect(opts.multipart.fields.filename).toBe("test.txt");
+  });
+
+  it("transcript true applies identical defaults to the multipart path", async () => {
+    const { dir, file } = makeTempFile('{"role":"user"}\n');
+    setAllowRoots([dir]);
+    mockRequest.mockResolvedValueOnce(okResult());
+    await storeArtifactHandler({
+      filename: "session.jsonl",
+      path: file,
+      transcript: true,
+    });
+    const opts = mockRequest.mock.calls[0][0];
+    expect(opts.multipart.fields.content_type).toBe("application/x-ndjson");
+    expect(opts.multipart.fields.metadata).toBe(JSON.stringify({ type: "transcript" }));
+    expect(opts.multipart.fields.transcript).toBeUndefined();
   });
 
   it("3.1.06 — /etc/passwd is denied; the API is never called", async () => {
@@ -377,6 +431,17 @@ describe("AF_MCP-3.1 — runtime field validation", () => {
   it("non-string content_type → invalid_request", async () => {
     await expectInvalidNoCall({ filename: "f", content: "eHg=", content_type: 7 });
   });
+
+  it.each([null, "true", 0, 1, {}, []])(
+    "non-boolean transcript %j → invalid_request before path/API work",
+    async (transcript) => {
+      await expectInvalidNoCall({
+        filename: "f",
+        path: "/definitely/not/read",
+        transcript,
+      });
+    }
+  );
 
   // SESSION_ID_PATTERN regression — Codex finding 2026-05-27.
   // The MCP server must not mint a session shape that seal_session cannot

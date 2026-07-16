@@ -77,6 +77,15 @@ INPUT_SCHEMA = {
             "type": "string",
             "description": "MIME type. If omitted, guessed from filename.",
         },
+        "transcript": {
+            "type": "boolean",
+            "default": False,
+            "description": (
+                'Marks this artifact as a transcript: auto-fills metadata.type="transcript" '
+                "and defaults content_type to application/x-ndjson, both overridable by "
+                "explicit content_type/metadata arguments."
+            ),
+        },
         "session_id": {"type": "string", "pattern": SESSION_ID_PATTERN},
         "agent_id": {"type": "string"},
         "metadata": {
@@ -132,6 +141,12 @@ def _generate_idempotency_key() -> str:
 
 async def handler(args: dict[str, Any] | None, ctx) -> dict[str, Any]:
     a = args or {}
+
+    # Reject before client acquisition or any path/file work. bool is checked
+    # exactly so integers (including 0/1) are not accepted as booleans.
+    if "transcript" in a and not isinstance(a["transcript"], bool):
+        return _local_invalid_request("`transcript` must be a boolean")
+    transcript = a.get("transcript", False)
 
     filename = a.get("filename")
     if not isinstance(filename, str) or not (1 <= len(filename) <= 255):
@@ -214,6 +229,7 @@ async def handler(args: dict[str, Any] | None, ctx) -> dict[str, Any]:
                 metadata=metadata_arg,
                 ttl=ttl,
                 idempotency_key=idempotency_key,
+                transcript=transcript,
             )
         except Exception as exc:
             return error_result(exc, "store_artifact")
@@ -288,6 +304,7 @@ async def handler(args: dict[str, Any] | None, ctx) -> dict[str, Any]:
                 metadata=metadata_arg,
                 ttl=ttl,
                 idempotency_key=idempotency_key,
+                transcript=transcript,
             )
         except Exception as exc:
             return error_result(exc, "store_artifact")

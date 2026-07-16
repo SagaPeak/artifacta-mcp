@@ -36,13 +36,13 @@ REQUIRED_CLIENT_METHODS: tuple[str, ...] = (
 )
 
 # Keyword arguments the MCP store_artifact handler passes to Client.push().
-# `content_type` was added in artifacta-cli 0.3.0; earlier versions raise
-# `TypeError: push() got an unexpected keyword argument 'content_type'`
-# before any byte reaches the wire.
+# These are capability-checked rather than tied to an unreleased version floor.
+# Missing parameters raise TypeError before any byte reaches the wire.
 REQUIRED_PUSH_KWARGS: tuple[str, ...] = (
     "content",
     "filename",
     "content_type",
+    "transcript",
 )
 
 _UPGRADE_HINT = (

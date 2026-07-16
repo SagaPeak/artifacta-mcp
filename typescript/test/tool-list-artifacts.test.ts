@@ -105,6 +105,10 @@ describe("AF_MCP-2.2 — list_artifacts registration", () => {
       type: "string",
       format: "date-time",
     });
+    expect(props.transcript).toMatchObject({
+      type: "boolean",
+      default: false,
+    });
     expect(props.limit).toMatchObject({
       type: "integer",
       minimum: 1,
@@ -172,11 +176,17 @@ describe("AF_MCP-2.2 — schema validation gate", () => {
         content_type: "application/pdf",
         created_after: "2026-01-01T00:00:00Z",
         created_before: "2026-12-31T23:59:59Z",
+        transcript: true,
         metadata: { env: "prod", model: "gpt-4" },
         limit: 25,
         cursor: "opaque_cursor",
       })
     ).toBe(true);
+  });
+
+  it("rejects non-boolean transcript values", () => {
+    const validate = compileToolSchema(LIST_ARTIFACTS_TOOL);
+    expect(validate({ transcript: "true" })).toBe(false);
   });
 });
 
@@ -214,6 +224,28 @@ describe("AF_MCP-2.2 — buildListArtifactsPath", () => {
     const params = new URLSearchParams(path.split("?")[1]);
     expect(params.get("metadata.env")).toBe("prod");
     expect(params.get("metadata.model")).toBe("gpt-4");
+  });
+
+  it("adds exactly one metadata.type filter for transcript sugar", () => {
+    const path = buildListArtifactsPath({ transcript: true });
+    const params = new URLSearchParams(path.split("?")[1]);
+    expect(params.getAll("metadata.type")).toEqual(["transcript"]);
+    expect(params.has("transcript")).toBe(false);
+  });
+
+  it("preserves an explicit metadata type, including an empty value", () => {
+    for (const type of ["conversation", ""]) {
+      const path = buildListArtifactsPath({ transcript: true, metadata: { type } });
+      const params = new URLSearchParams(path.split("?")[1]);
+      expect(params.getAll("metadata.type")).toEqual([type]);
+      expect(params.has("transcript")).toBe(false);
+    }
+  });
+
+  it("copies metadata before merging transcript sugar", () => {
+    const metadata = { env: "prod" };
+    buildListArtifactsPath({ transcript: true, metadata });
+    expect(metadata).toEqual({ env: "prod" });
   });
 
   it("AF_MCP-2.2.18: cursor is forwarded unchanged (opacity preserved)", () => {
@@ -257,6 +289,32 @@ describe("AF_MCP-2.2 — buildListArtifactsPath", () => {
 // ─── Tool handler — AF_MCP-2.2.01–07, 2.2.13–18 ──────────────────────────────
 
 describe("AF_MCP-2.2 — list_artifacts handler", () => {
+  it("rejects a present non-boolean transcript before client acquisition", async () => {
+    resetHttpClient();
+    const result = await listArtifactsHandler({ transcript: "true" });
+    expect(result.isError).toBe(true);
+    expect((result._meta as { code: string }).code).toBe("invalid_request");
+    expect(mockRequest).not.toHaveBeenCalled();
+  });
+
+  it("normalizes transcript sugar into the existing metadata query", async () => {
+    mockRequest.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      data: SAMPLE_RESPONSE,
+    } satisfies HttpResult);
+    await listArtifactsHandler({
+      session_id: "sess_1",
+      transcript: true,
+      metadata: { env: "prod" },
+    });
+    const params = getRequestedQuery();
+    expect(params.get("session_id")).toBe("sess_1");
+    expect(params.get("metadata.env")).toBe("prod");
+    expect(params.getAll("metadata.type")).toEqual(["transcript"]);
+    expect(params.has("transcript")).toBe(false);
+  });
+
   it("AF_MCP-2.2.01: empty filters → calls GET /v1/artifacts and returns the API body", async () => {
     mockRequest.mockResolvedValueOnce({
       ok: true,

@@ -67,8 +67,20 @@ cp ~/.claude/projects/<munged-cwd>/<session-uuid>.jsonl /tmp/transcript-<session
 authenticated (`artifacta whoami` succeeds):
 
 ```bash
-artifacta push /tmp/transcript-<session-uuid>.jsonl --transcript --session <session-uuid> --meta capture=snapshot
+# Capture the model from the snapshot itself (best-effort): last MAIN-LOOP
+# assistant model; sidechain/subagent entries and "<synthetic>" are excluded.
+MODEL="$(jq -r 'select(.type == "assistant" and .isSidechain != true) | .message.model // empty | select(. != "<synthetic>")' /tmp/transcript-<session-uuid>.jsonl 2>/dev/null | tail -n 1 || true)"
+MODELS_USED="$(jq -r 'select(.type == "assistant") | .message.model // empty | select(. != "<synthetic>")' /tmp/transcript-<session-uuid>.jsonl 2>/dev/null | sort -u | paste -sd, - || true)"
+
+MODEL_FLAGS=()
+if [[ -n "$MODEL" ]]; then
+  MODEL_FLAGS=(--meta "model=$MODEL" --meta "model_source=transcript" --meta "models_used=$MODELS_USED")
+fi
+artifacta push /tmp/transcript-<session-uuid>.jsonl --transcript --session <session-uuid> --meta capture=snapshot "${MODEL_FLAGS[@]}"
 ```
+
+The guard is built in: if `MODEL` comes back empty (no main-loop assistant
+turns yet), the push omits all three model `--meta` flags.
 
 `--transcript` tags the artifact `metadata.type=transcript` and defaults the
 content type to `application/x-ndjson`. Delete the temp copy after the push
@@ -84,9 +96,12 @@ CLI. Read the snapshot file and send its bytes as base64 `content` (never
   "content": "<base64 of the snapshot>",
   "session_id": "<session-uuid>",
   "transcript": true,
-  "metadata": { "capture": "snapshot" }
+  "metadata": { "capture": "snapshot", "model": "<last main-loop assistant model>", "model_source": "transcript", "models_used": "<comma-separated distinct models>" }
 }
 ```
+
+Compute the values with the same jq filters as the CLI path before building
+the call; omit all three keys if no model is found.
 
 The `content` field caps at 10 MB decoded, and base64 inflates size by
 about a third — long sessions can exceed it. If the snapshot is too large,
@@ -169,7 +184,18 @@ if [[ -z "$TRANSCRIPT_PATH" || "$TRANSCRIPT_PATH" == "null" || ! -f "$TRANSCRIPT
   exit 1
 fi
 
-artifacta push "$TRANSCRIPT_PATH" --session "$SESSION_ID" --transcript
+# Model capture (best-effort): metadata.model is the LAST MAIN-LOOP assistant
+# model — sidechain (subagent) entries and "<synthetic>" placeholders are
+# excluded. models_used lists every distinct model observed, sidechains
+# included. Extraction failure degrades to a plain push, never a lost one.
+MODEL="$(jq -r 'select(.type == "assistant" and .isSidechain != true) | .message.model // empty | select(. != "<synthetic>")' "$TRANSCRIPT_PATH" 2>/dev/null | tail -n 1 || true)"
+MODELS_USED="$(jq -r 'select(.type == "assistant") | .message.model // empty | select(. != "<synthetic>")' "$TRANSCRIPT_PATH" 2>/dev/null | sort -u | paste -sd, - || true)"
+
+if [[ -n "$MODEL" ]]; then
+  artifacta push "$TRANSCRIPT_PATH" --session "$SESSION_ID" --transcript --meta "model=$MODEL" --meta "model_source=transcript" --meta "models_used=$MODELS_USED"
+else
+  artifacta push "$TRANSCRIPT_PATH" --session "$SESSION_ID" --transcript
+fi
 ```
 
 Do not modify the script — no logging, retries, fallback pushes, or
@@ -201,3 +227,11 @@ told apart from this skill's mid-session snapshots.
   re-verify after upgrading.
 - **Claude Code only.** Codex CLI may have a comparable per-session file
   but is unverified and unsupported; ChatGPT keeps no local transcript.
+- **Model capture is captured, not attested.** Artifacta records the model
+  automatically from the agent runtime's own session log and freezes it at
+  store time — a captured producer claim, not a cryptographic attestation.
+  Session-level capture approximates per-artifact authorship: the transcript
+  proves which models participated in the session, not which one emitted any
+  specific artifact's bytes. Subagents spawned as separate sessions won't
+  appear in the main transcript, so `models_used` is "models observed" —
+  never claimed exhaustive.

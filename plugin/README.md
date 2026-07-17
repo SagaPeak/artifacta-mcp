@@ -43,8 +43,7 @@ claude mcp logout artifacta
 
 ## Updating
 
-The plugin has no `version` field — it's versioned by git SHA. Pull the
-latest with:
+Pull the latest with:
 
 ```text
 /plugin marketplace update artifacta

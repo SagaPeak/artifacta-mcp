@@ -61,8 +61,11 @@ Attribution and organization, all optional:
 - `session_id` — groups this artifact with others from the same run.
 - `agent_id` — defaults to the connected MCP client's name (or `"mcp"`) if
   you omit it, so provenance is never blank.
-- `model` — the model that generated the content (e.g. `"claude-5"`); it is
-  stored as `metadata.model` unless you've already set that key yourself.
+- `model` — **always pass this**, using the exact model ID from your system
+  prompt (e.g. `"claude-fable-5"`); it is stored as `metadata.model` unless
+  you've already set that key yourself. If a subagent produced this artifact
+  end-to-end, pass its model, not yours. This is a declared producer claim —
+  never describe it as a verified model.
 - `metadata` — an object of string values. Keys must match
   `^[a-zA-Z][a-zA-Z0-9_-]{0,63}$` (no dots, no leading digit), values capped
   at 1024 characters.

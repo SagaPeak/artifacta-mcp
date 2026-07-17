@@ -1,6 +1,6 @@
 {
   "name": "artifacta",
-  "owner": { "name": "Artifacta", "email": "team@artifacta.io" },
+  "owner": { "name": "Artifacta", "email": "support@artifacta.io" },
   "description": "Artifacta — the artifact store for AI agents",
   "plugins": [
     {

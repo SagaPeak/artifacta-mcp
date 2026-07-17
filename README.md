@@ -34,9 +34,8 @@ automatically:
 
 This bundles the same hosted MCP connection as the Quick start below plus the
 `persisting-outputs` skill (`/artifacta:persisting-outputs`, or it auto-triggers
-when a session has outputs worth saving). The plugin is versioned by git SHA
-(no `version` field) and is updated with `/plugin marketplace update
-artifacta`. See the
+when a session has outputs worth saving). Update the plugin with
+`/plugin marketplace update artifacta`. See the
 [plugin setup guide](https://docs.artifacta.io/mcp/install/claude-code-plugin).
 
 ## Quick start

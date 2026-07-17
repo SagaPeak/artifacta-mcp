@@ -49,7 +49,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      # Non-strict: the plugin intentionally has no version field (git SHA
-      # is the version), which validate reports as a warning.
+      # Non-strict for now: flip to --strict once the monorepo sync carrying
+      # the explicit plugin.json version field (monorepo 1b6ab88) lands.
       - run: npx --yes @anthropic-ai/claude-code plugin validate .
       - run: npx --yes @anthropic-ai/claude-code plugin validate plugin

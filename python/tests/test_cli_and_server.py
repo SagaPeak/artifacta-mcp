@@ -6,7 +6,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from artifacta_mcp import __version__, safety
+from tests.conftest import HAS_TRANSCRIPT_CAPABILITY, TRANSCRIPT_CAPABILITY_SKIP_REASON
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SDK_SRC = (REPO_ROOT / ".." / ".." / "cli" / "src").resolve()
@@ -60,6 +63,7 @@ def test_cli_refuses_without_api_key():
     assert "ARTIFACTA_API_KEY" in result.stderr
 
 
+@pytest.mark.skipif(not HAS_TRANSCRIPT_CAPABILITY, reason=TRANSCRIPT_CAPABILITY_SKIP_REASON)
 def test_cli_main_constructs_client_and_registers_tools(monkeypatch):
     """Regression for the Codex finding: cli.main passed `api_url=` to the SDK
     Client which raised TypeError. This test exercises the full main() path

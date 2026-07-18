@@ -11,12 +11,14 @@ from artifacta_mcp.sdk_compat import (
     REQUIRED_PUSH_KWARGS,
     check_sdk_compatibility,
 )
+from tests.conftest import HAS_TRANSCRIPT_CAPABILITY, TRANSCRIPT_CAPABILITY_SKIP_REASON
 
 # ---------------------------------------------------------------------------
 # Happy path — against the real installed SDK
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(not HAS_TRANSCRIPT_CAPABILITY, reason=TRANSCRIPT_CAPABILITY_SKIP_REASON)
 def test_real_client_passes_compat_check():
     assert check_sdk_compatibility(RealClient) is None
 
@@ -26,6 +28,7 @@ def test_real_client_has_every_required_method():
         assert hasattr(RealClient, name), f"Real Client missing {name!r}"
 
 
+@pytest.mark.skipif(not HAS_TRANSCRIPT_CAPABILITY, reason=TRANSCRIPT_CAPABILITY_SKIP_REASON)
 def test_real_client_push_has_every_required_kwarg():
     sig = inspect.signature(RealClient.push)
     for kw in REQUIRED_PUSH_KWARGS:

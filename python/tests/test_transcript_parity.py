@@ -7,9 +7,17 @@ import json
 from pathlib import Path
 
 import pytest
-from artifacta.transcript import apply_transcript_write_defaults
 
 from artifacta_mcp.tools import list_artifacts, store_artifact
+from tests.conftest import TRANSCRIPT_CAPABILITY_SKIP_REASON
+
+# See tests/conftest.py: artifacta.transcript is missing from the currently
+# published artifacta-cli release on PyPI. Skip (not fail) rather than
+# unconditionally skipping or deleting the parity coverage.
+apply_transcript_write_defaults = pytest.importorskip(
+    "artifacta.transcript",
+    reason=TRANSCRIPT_CAPABILITY_SKIP_REASON,
+).apply_transcript_write_defaults
 
 FIXTURE = json.loads(
     (Path(__file__).resolve().parents[2] / "shared" / "transcript-v1-fixture.json").read_text(

@@ -18,6 +18,7 @@ import pytest
 from artifacta_mcp import langchain as lc_adapter
 from artifacta_mcp import safety
 from artifacta_mcp.tools import register_all_tools
+from tests.conftest import HAS_TRANSCRIPT_CAPABILITY, TRANSCRIPT_CAPABILITY_SKIP_REASON
 
 StructuredTool = pytest.importorskip("langchain_core.tools").StructuredTool
 ToolException = pytest.importorskip("langchain_core.tools").ToolException
@@ -289,6 +290,7 @@ async def _list_via_real_stdio() -> list[StructuredTool]:
             return await lc_adapter.aget_tools(session)
 
 
+@pytest.mark.skipif(not HAS_TRANSCRIPT_CAPABILITY, reason=TRANSCRIPT_CAPABILITY_SKIP_REASON)
 def test_real_stdio_lists_all_13_tools_and_matches_schemas():
     tools = asyncio.run(asyncio.wait_for(_list_via_real_stdio(), timeout=30))
     by_name = {t.name: t for t in tools}

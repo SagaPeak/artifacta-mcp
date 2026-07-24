@@ -210,31 +210,53 @@ READ_TOOLS = {
     "get_artifact_download_url",
     "list_sessions",
 }
-WRITE_TOOLS = {"store_artifact", "request_upload_url", "complete_upload", "publish_artifact", "unpublish_artifact"}
-DESTRUCTIVE_TOOLS = {"create_download_link", "delete_artifact", "seal_session"}
+WRITE_TOOLS = {"store_artifact", "request_upload_url", "complete_upload"}
+DESTRUCTIVE_TOOLS = {
+    "create_download_link",
+    "delete_artifact",
+    "seal_session",
+    "publish_artifact",
+    "unpublish_artifact",
+}
 ALL_13 = READ_TOOLS | WRITE_TOOLS | DESTRUCTIVE_TOOLS
+OPEN_WORLD_TOOLS = {"create_download_link", "publish_artifact", "unpublish_artifact"}
 
 
 @pytest.mark.parametrize("name", sorted(READ_TOOLS))
 def test_read_tools_annotations(name):
-    assert tool_annotations(name, "safe") == {"readOnlyHint": True}
+    assert tool_annotations(name, "safe") == {
+        "readOnlyHint": True,
+        "openWorldHint": False,
+        "destructiveHint": False,
+    }
 
 
 @pytest.mark.parametrize("name", sorted(WRITE_TOOLS - {"store_artifact"}))
 def test_write_tools_annotations(name):
-    assert tool_annotations(name, "writeNonIdempotent") == {"readOnlyHint": False}
+    assert tool_annotations(name, "writeNonIdempotent") == {
+        "readOnlyHint": False,
+        "openWorldHint": False,
+        "destructiveHint": False,
+    }
 
 
 def test_store_artifact_idempotent_hint():
     assert tool_annotations("store_artifact", "writeIdempotent") == {
         "readOnlyHint": False,
+        "openWorldHint": False,
+        "destructiveHint": False,
         "idempotentHint": True,
     }
 
 
 @pytest.mark.parametrize("name", sorted(DESTRUCTIVE_TOOLS))
 def test_destructive_tools_annotations(name):
-    assert tool_annotations(name, "destructive") == {"destructiveHint": True}
+    safety = "writeIdempotent" if name in {"publish_artifact", "unpublish_artifact"} else "destructive"
+    assert tool_annotations(name, safety) == {
+        "readOnlyHint": False,
+        "openWorldHint": name in OPEN_WORLD_TOOLS,
+        "destructiveHint": True,
+    }
 
 
 def test_production_catalog_exposes_annotations_on_all_13_tools():
@@ -248,13 +270,30 @@ def test_production_catalog_exposes_annotations_on_all_13_tools():
         assert "annotations" in t
         name = t["name"]
         if name in READ_TOOLS:
-            assert t["annotations"] == {"readOnlyHint": True}
+            assert t["annotations"] == {
+                "readOnlyHint": True,
+                "openWorldHint": False,
+                "destructiveHint": False,
+            }
         elif name == "store_artifact":
-            assert t["annotations"] == {"readOnlyHint": False, "idempotentHint": True}
+            assert t["annotations"] == {
+                "readOnlyHint": False,
+                "openWorldHint": False,
+                "destructiveHint": False,
+                "idempotentHint": True,
+            }
         elif name in WRITE_TOOLS:
-            assert t["annotations"] == {"readOnlyHint": False}
+            assert t["annotations"] == {
+                "readOnlyHint": False,
+                "openWorldHint": False,
+                "destructiveHint": False,
+            }
         else:
-            assert t["annotations"] == {"destructiveHint": True}
+            assert t["annotations"] == {
+                "readOnlyHint": False,
+                "openWorldHint": name in OPEN_WORLD_TOOLS,
+                "destructiveHint": True,
+            }
 
 
 def test_readme_contains_mcp_name_marker():

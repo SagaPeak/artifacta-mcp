@@ -69,14 +69,28 @@ WRITE_CONFIRM_TOOL_NAMES: set[str] = {
 
 _registry: dict[str, ToolRegistration] = {}
 
+OPEN_WORLD_TOOL_NAMES: set[str] = {
+    "create_download_link",
+    "publish_artifact",
+    "unpublish_artifact",
+}
+
+DESTRUCTIVE_ANNOTATION_TOOL_NAMES: set[str] = {
+    "create_download_link",
+    "delete_artifact",
+    "seal_session",
+    "publish_artifact",
+    "unpublish_artifact",
+}
+
 
 def tool_annotations(name: str, safety: ToolSafety) -> dict[str, bool]:
     """MCP ToolAnnotations per AF_MCP-1.5 / AF_MCP-REG-2 safety table."""
-    if safety == "safe":
-        return {"readOnlyHint": True}
-    if safety == "destructive":
-        return {"destructiveHint": True}
-    annotations: dict[str, bool] = {"readOnlyHint": False}
+    annotations: dict[str, bool] = {
+        "readOnlyHint": safety == "safe",
+        "openWorldHint": name in OPEN_WORLD_TOOL_NAMES,
+        "destructiveHint": name in DESTRUCTIVE_ANNOTATION_TOOL_NAMES,
+    }
     if name == "store_artifact":
         annotations["idempotentHint"] = True
     return annotations

@@ -66,10 +66,11 @@ describe("publish_artifact — registration", () => {
     expect(schema.additionalProperties).toBe(false);
   });
 
-  it("schema includes visibility and access enum properties", () => {
+  it("schema restricts MCP publishing to public access", () => {
     const props = (PUBLISH_ARTIFACT_TOOL.inputSchema as Record<string, unknown>).properties as Record<string, Record<string, unknown>>;
     expect((props.visibility as Record<string, unknown>).enum).toEqual(["unlisted", "public"]);
-    expect((props.access as Record<string, unknown>).enum).toEqual(["none", "password"]);
+    expect((props.access as Record<string, unknown>).enum).toEqual(["none"]);
+    expect(PUBLISH_ARTIFACT_TOOL.description).toContain("does not support password-protected publishing");
   });
 });
 
@@ -125,6 +126,16 @@ describe("publish_artifact — handler", () => {
 
   it("non-string artifact_id → invalid_request, no API call", async () => {
     const result = await publishArtifactHandler({ artifact_id: 42 });
+    expect(result.isError).toBe(true);
+    expect((result._meta as { code: string }).code).toBe("invalid_request");
+    expect(mockRequest).not.toHaveBeenCalled();
+  });
+
+  it("password access → invalid_request, no API call", async () => {
+    const result = await publishArtifactHandler({
+      artifact_id: "art_x",
+      access: "password",
+    });
     expect(result.isError).toBe(true);
     expect((result._meta as { code: string }).code).toBe("invalid_request");
     expect(mockRequest).not.toHaveBeenCalled();

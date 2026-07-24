@@ -23,18 +23,30 @@ export type ToolHandler = (
   ctx?: ToolCallContext
 ) => Promise<CallToolResult>;
 
+const OPEN_WORLD_TOOL_NAMES = new Set([
+  "create_download_link",
+  "publish_artifact",
+  "unpublish_artifact",
+]);
+
+const DESTRUCTIVE_ANNOTATION_TOOL_NAMES = new Set([
+  "create_download_link",
+  "delete_artifact",
+  "seal_session",
+  "publish_artifact",
+  "unpublish_artifact",
+]);
+
 /** MCP ToolAnnotations per AF_MCP-1.5 / AF_MCP-REG-2 safety table. */
 export function toolAnnotations(
   name: string,
   safety: ToolSafety
 ): NonNullable<Tool["annotations"]> {
-  if (safety === "safe") {
-    return { readOnlyHint: true };
-  }
-  if (safety === "destructive") {
-    return { destructiveHint: true };
-  }
-  const annotations: NonNullable<Tool["annotations"]> = { readOnlyHint: false };
+  const annotations: NonNullable<Tool["annotations"]> = {
+    readOnlyHint: safety === "safe",
+    openWorldHint: OPEN_WORLD_TOOL_NAMES.has(name),
+    destructiveHint: DESTRUCTIVE_ANNOTATION_TOOL_NAMES.has(name),
+  };
   if (name === "store_artifact") {
     annotations.idempotentHint = true;
   }

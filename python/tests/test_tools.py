@@ -848,12 +848,13 @@ def test_publish_artifact_no_password_param():
     assert "artifact_id" in INPUT_SCHEMA["required"]
 
 
-def test_publish_artifact_schema_has_visibility_and_access():
-    from artifacta_mcp.tools.publish_artifact import INPUT_SCHEMA
+def test_publish_artifact_schema_restricts_mcp_to_public_access():
+    from artifacta_mcp.tools.publish_artifact import INPUT_SCHEMA, PUBLISH_ARTIFACT_DESCRIPTION
 
     props = INPUT_SCHEMA["properties"]
     assert props["visibility"]["enum"] == ["unlisted", "public"]
-    assert props["access"]["enum"] == ["none", "password"]
+    assert props["access"]["enum"] == ["none"]
+    assert "does not support password-protected publishing" in PUBLISH_ARTIFACT_DESCRIPTION
 
 
 def test_publish_artifact_calls_sdk(fake_client):
@@ -880,6 +881,19 @@ def test_publish_artifact_missing_id_returns_invalid_request(fake_client):
     result = asyncio.run(handler({}, _ctx))
     assert result.get("isError") is True
     assert result["_meta"]["code"] == "invalid_request"
+
+
+def test_publish_artifact_rejects_password_access(fake_client):
+    from artifacta_mcp.tools.publish_artifact import handler
+
+    client = get_client()
+    client.publish_artifact = MagicMock()
+    result = asyncio.run(
+        handler({"artifact_id": "art_x", "access": "password"}, _ctx)
+    )
+    assert result.get("isError") is True
+    assert result["_meta"]["code"] == "invalid_request"
+    client.publish_artifact.assert_not_called()
 
 
 def test_publish_artifact_defaults_visibility_and_access(fake_client):

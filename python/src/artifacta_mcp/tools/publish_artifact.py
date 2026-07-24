@@ -11,7 +11,8 @@ PUBLISH_ARTIFACT_DESCRIPTION = (
     "https://artifacta.io/a/{slug}. Composes with store_artifact (store first, then publish). "
     "Returns a public_url anyone can open without an Artifacta account. Default visibility is "
     'unlisted (link-only); pass visibility:"public" for gallery-eligible later. Idempotent: '
-    "re-publishing the same artifact_id updates the existing page and keeps the same URL."
+    "re-publishing the same artifact_id updates the existing page and keeps the same URL. This "
+    "MCP tool does not support password-protected publishing."
 )
 
 INPUT_SCHEMA = {
@@ -20,7 +21,7 @@ INPUT_SCHEMA = {
         "artifact_id": {"type": "string", "minLength": 1},
         "title": {"type": "string", "maxLength": 255},
         "visibility": {"type": "string", "enum": ["unlisted", "public"]},
-        "access": {"type": "string", "enum": ["none", "password"]},
+        "access": {"type": "string", "enum": ["none"]},
     },
     "required": ["artifact_id"],
     "additionalProperties": False,
@@ -43,6 +44,20 @@ _INVALID_REQUEST = {
     "_meta": {"code": "invalid_request", "status": 400, "retry_hint": "do_not_retry"},
 }
 
+_INVALID_ACCESS = {
+    "isError": True,
+    "content": [
+        {
+            "type": "text",
+            "text": (
+                'Bad arguments: `access` must be "none"; password-protected publishing '
+                "is not supported by this MCP tool. Adjust the inputs and call again."
+            ),
+        }
+    ],
+    "_meta": {"code": "invalid_request", "status": 400, "retry_hint": "do_not_retry"},
+}
+
 
 async def handler(args: dict[str, Any] | None, _ctx) -> dict[str, Any]:
     a = args or {}
@@ -50,6 +65,8 @@ async def handler(args: dict[str, Any] | None, _ctx) -> dict[str, Any]:
     artifact_id = a.get("artifact_id")
     if not isinstance(artifact_id, str) or len(artifact_id) < 1:
         return _INVALID_REQUEST
+    if "access" in a and a["access"] != "none":
+        return _INVALID_ACCESS
 
     title = a.get("title")
     visibility = a.get("visibility", "unlisted")

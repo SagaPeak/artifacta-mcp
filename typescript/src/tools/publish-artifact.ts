@@ -20,7 +20,8 @@ export const PUBLISH_ARTIFACT_DESCRIPTION =
   "https://artifacta.io/a/{slug}. Composes with store_artifact (store first, then publish). " +
   "Returns a public_url anyone can open without an Artifacta account. Default visibility is " +
   "unlisted (link-only); pass visibility:\"public\" for gallery-eligible later. Idempotent: " +
-  "re-publishing the same artifact_id updates the existing page and keeps the same URL.";
+  "re-publishing the same artifact_id updates the existing page and keeps the same URL. This " +
+  "MCP tool does not support password-protected publishing.";
 
 export const PUBLISH_ARTIFACT_TOOL: Tool = {
   name: "publish_artifact",
@@ -31,7 +32,7 @@ export const PUBLISH_ARTIFACT_TOOL: Tool = {
       artifact_id: { type: "string", minLength: 1 },
       title: { type: "string", maxLength: 255 },
       visibility: { type: "string", enum: ["unlisted", "public"] },
-      access: { type: "string", enum: ["none", "password"] },
+      access: { type: "string", enum: ["none"] },
     },
     required: ["artifact_id"],
     additionalProperties: false,
@@ -46,6 +47,9 @@ export const publishArtifactHandler = async (
 
   if (typeof a.artifact_id !== "string" || a.artifact_id.length < 1) {
     return localInvalidRequest("`artifact_id` is required and must be a non-empty string");
+  }
+  if (a.access !== undefined && a.access !== "none") {
+    return localInvalidRequest('`access` must be "none"; password-protected publishing is not supported by this MCP tool');
   }
 
   const body: Record<string, unknown> = {

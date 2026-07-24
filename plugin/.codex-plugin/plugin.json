@@ -1,0 +1,32 @@
+{
+  "name": "artifacta",
+  "version": "1.1.0",
+  "description": "Persist, retrieve, share, and capture AI-agent outputs with Artifacta.",
+  "author": {
+    "name": "Artifacta",
+    "email": "support@artifacta.io",
+    "url": "https://artifacta.io"
+  },
+  "homepage": "https://docs.artifacta.io/mcp/overview",
+  "repository": "https://github.com/SagaPeak/artifacta-mcp",
+  "license": "MIT",
+  "keywords": ["artifacts", "storage", "ai-agents", "mcp", "transcripts"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Artifacta",
+    "shortDescription": "Store and hand off agent outputs.",
+    "longDescription": "Hosted Artifacta storage for durable agent outputs, retrieval, sharing, and verified conversation-log snapshots.",
+    "developerName": "Artifacta",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://artifacta.io",
+    "privacyPolicyURL": "https://artifacta.io/privacy",
+    "termsOfServiceURL": "https://artifacta.io/terms",
+    "defaultPrompt": [
+      "Save this run's deliverables to Artifacta.",
+      "Find outputs from my previous Artifacta session.",
+      "Capture this conversation log in Artifacta."
+    ]
+  }
+}

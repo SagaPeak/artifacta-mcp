@@ -75,7 +75,7 @@ Attribution and organization, all optional:
 - `transcript` — set `true` when storing a conversation/session log: it
   tags the artifact `metadata.type=transcript` and defaults the content
   type to `application/x-ndjson` (explicit values win). To capture the
-  *current Claude Code session's* transcript, use the `capture-transcript`
+  *current supported agent session's* transcript, use the `capture-transcript`
   skill instead — it handles locating and verifying the live file.
 
 For crash-safe retries pass your own `idempotency_key` (≤256 chars); a

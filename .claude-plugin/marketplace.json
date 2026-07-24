@@ -6,7 +6,7 @@
     {
       "name": "artifacta",
       "source": "./plugin",
-      "description": "Persist, retrieve, and share agent run outputs via the hosted Artifacta MCP server, plus a skill that teaches Claude when and how to save artifacts.",
+      "description": "Persist, retrieve, and share agent run outputs via the hosted Artifacta MCP server, with skills for Claude Code and Codex.",
       "category": "productivity",
       "keywords": ["artifacts", "storage", "memory", "mcp", "ai-agents"]
     }

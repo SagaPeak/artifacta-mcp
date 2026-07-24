@@ -1,0 +1,16 @@
+{
+  "description": "Artifacta one-shot Codex transcript capture.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/hooks/artifacta_transcript_stop.py\"",
+            "statusMessage": "Checking Artifacta transcript capture"
+          }
+        ]
+      }
+    ]
+  }
+}

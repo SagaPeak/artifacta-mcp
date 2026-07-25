@@ -15,6 +15,7 @@
 //   POST /mcp      → JSON-RPC, application/json
 //   GET  /mcp      → 405 Method Not Allowed (no long-lived SSE in v1)
 //   GET  /healthz  → 200 {"status":"ok"}
+//   GET  /.well-known/openai-apps-challenge → 200 text/plain (ChatGPT Apps domain verify)
 //   MCP-Protocol-Version: defaults to 2025-03-26 when absent; the SDK rejects
 //                         unsupported versions with 400.
 
@@ -58,6 +59,15 @@ export const DEFAULT_RESOURCE_URI = "https://mcp.artifacta.io/mcp";
 // RFC 9728 fixed location, served from the resource's origin (not under /mcp).
 const WELL_KNOWN_PATH = "/.well-known/oauth-protected-resource";
 
+// ChatGPT Apps domain verification — origin-root well-known (not under /mcp).
+const OPENAI_APPS_CHALLENGE_PATH = "/.well-known/openai-apps-challenge";
+
+// Public verification token from the OpenAI submission portal. Override with
+// OPENAI_APPS_CHALLENGE_TOKEN or HttpServerOptions.openaiAppsChallengeToken;
+// remove the default once domain verification succeeds.
+const DEFAULT_OPENAI_APPS_CHALLENGE_TOKEN =
+  "ggeZ7-or724ot7sv6lYBTlJtWN3cP33-O4KFWCXfYRs";
+
 // PRM `scopes_supported` lists the scopes the Authorization Server (Supabase
 // Auth) accepts at /authorize. Supabase honors only OIDC scopes and rejects
 // custom `artifacts:*` ("unsupported scope"), so we advertise OIDC scopes only.
@@ -99,6 +109,10 @@ export interface HttpServerOptions {
   /** `MCP_INTERNAL_SECRET` shared with the internal API. Required when
    * `oauthVerifier` is set. NEVER logged. */
   internalSecret?: string;
+  /** Plain-text body for `GET /.well-known/openai-apps-challenge`. Empty string
+   * disables the route (404). When omitted, uses `OPENAI_APPS_CHALLENGE_TOKEN`
+   * or the submission default. */
+  openaiAppsChallengeToken?: string;
 }
 
 export interface StartedHttpServer {
@@ -141,6 +155,26 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.setHeader("Content-Type", "application/json");
   res.setHeader("Content-Length", Buffer.byteLength(payload));
   res.end(payload);
+}
+
+function sendPlain(res: ServerResponse, status: number, body: string): void {
+  res.statusCode = status;
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Content-Length", Buffer.byteLength(body));
+  res.end(body);
+}
+
+function resolveOpenAiAppsChallengeToken(
+  opts: HttpServerOptions,
+): string | undefined {
+  if (opts.openaiAppsChallengeToken !== undefined) {
+    return opts.openaiAppsChallengeToken || undefined;
+  }
+  const fromEnv = process.env.OPENAI_APPS_CHALLENGE_TOKEN;
+  if (fromEnv !== undefined) {
+    return fromEnv || undefined;
+  }
+  return DEFAULT_OPENAI_APPS_CHALLENGE_TOKEN;
 }
 
 /** Read the request body with a hard ceiling. Rejects with `oversize` past the
@@ -354,6 +388,20 @@ function route(opts: HttpServerOptions) {
 
     if (path === "/healthz" && method === "GET") {
       sendJson(res, 200, { status: "ok" });
+      return;
+    }
+
+    // ChatGPT Apps domain verification — plain text token at origin root.
+    if (path === OPENAI_APPS_CHALLENGE_PATH && method === "GET") {
+      const token = resolveOpenAiAppsChallengeToken(opts);
+      if (!token) {
+        sendJson(res, 404, {
+          error: { code: "not_found", message: "Not Found", status: 404 },
+        });
+        return;
+      }
+      res.setHeader("Cache-Control", "no-store");
+      sendPlain(res, 200, token);
       return;
     }
 

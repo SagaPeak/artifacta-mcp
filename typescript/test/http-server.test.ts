@@ -77,6 +77,37 @@ describe("GET /healthz", () => {
   });
 });
 
+describe("GET /.well-known/openai-apps-challenge", () => {
+  const PATH = "/.well-known/openai-apps-challenge";
+
+  it("returns the default ChatGPT Apps verification token as text/plain", async () => {
+    const res = await fetch(`${base}${PATH}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/plain");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.text()).toBe(
+      "ggeZ7-or724ot7sv6lYBTlJtWN3cP33-O4KFWCXfYRs",
+    );
+  });
+
+  it("returns 404 when the challenge token is explicitly disabled", async () => {
+    const custom = await startHttpServer({
+      port: 0,
+      config: { apiKey: undefined, apiUrl: stub.url },
+      allowedOrigins: [ALLOWED_ORIGIN],
+      openaiAppsChallengeToken: "",
+    });
+    try {
+      const res = await fetch(
+        `http://127.0.0.1:${custom.port}${PATH}`,
+      );
+      expect(res.status).toBe(404);
+    } finally {
+      await custom.close();
+    }
+  });
+});
+
 describe("GET /mcp", () => {
   it("returns 405 Method Not Allowed with Allow: POST", async () => {
     const res = await fetch(`${base}/mcp`);

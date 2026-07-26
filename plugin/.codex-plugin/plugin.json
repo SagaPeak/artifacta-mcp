@@ -1,6 +1,6 @@
 {
   "name": "artifacta",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Persist, retrieve, share, and capture AI-agent outputs with Artifacta.",
   "author": {
     "name": "Artifacta",

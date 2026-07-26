@@ -171,7 +171,9 @@ goes to stderr, data to stdout — safe to pipe into `jq` either way.
 - Deletes are soft: `delete_artifact` makes the artifact disappear from
   listings and download URLs return `410 Gone` immediately, but the R2 blob
   is hard-deleted by a background job 30 days later — there's no undo via
-  the API. Only delete on explicit user confirmation.
+  the API. Ask the user to confirm the exact `artifact_id` first, then call
+  with `confirm: true`. Never set `confirm: true` unless they approved the
+  delete in this conversation; the tool rejects the call without it.
 - `ttl` on an artifact governs when it expires (`artifact_expired` on
   access past that point); it's independent of a download link's own
   `expires_in`.

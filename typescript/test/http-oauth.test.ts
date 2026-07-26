@@ -353,7 +353,7 @@ describe("AG-07 read+write+destroy token", () => {
     const before = internalStub.requestLog.length;
     const res = await postBearer(
       t,
-      mcpBody("tools/call", { name: "delete_artifact", arguments: { artifact_id: ARTIFACT_ID } }, 11)
+      mcpBody("tools/call", { name: "delete_artifact", arguments: { artifact_id: ARTIFACT_ID, confirm: true } }, 11)
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as RpcEnvelope<ToolResult>;

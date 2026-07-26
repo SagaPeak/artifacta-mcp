@@ -812,17 +812,39 @@ def test_create_download_link_quota_exceeded_translates(fake_client):
 
 
 def test_delete_artifact_success(fake_client):
-    result = _call("delete_artifact", {"artifact_id": "art_aaaaaaaaaaaaaaaa"})
+    result = _call(
+        "delete_artifact",
+        {"artifact_id": "art_aaaaaaaaaaaaaaaa", "confirm": True},
+    )
     _assert_mcp_ok_shape(result, "deleted")
 
 
 def test_delete_artifact_replay_returns_already_deleted(fake_client):
     fake_client.raise_on["delete"] = ArtifactDeletedError("already gone")
-    result = _call("delete_artifact", {"artifact_id": "art_aaaaaaaaaaaaaaaa"})
+    result = _call(
+        "delete_artifact",
+        {"artifact_id": "art_aaaaaaaaaaaaaaaa", "confirm": True},
+    )
     _assert_mcp_ok_shape(result, "already_deleted")
     # The structured content carries the replay shape
     sc = result.get("structuredContent") or {}
     assert sc.get("already_deleted") is True
+
+
+def test_delete_artifact_requires_confirm_true(fake_client):
+    result = _call("delete_artifact", {"artifact_id": "art_aaaaaaaaaaaaaaaa"})
+    _assert_mcp_err_shape(result, "invalid_request")
+    assert "confirm" in result["content"][0]["text"]
+    assert fake_client.calls == []
+
+
+def test_delete_artifact_rejects_confirm_false(fake_client):
+    result = _call(
+        "delete_artifact",
+        {"artifact_id": "art_aaaaaaaaaaaaaaaa", "confirm": False},
+    )
+    _assert_mcp_err_shape(result, "invalid_request")
+    assert fake_client.calls == []
 
 
 def test_seal_session_success(fake_client):

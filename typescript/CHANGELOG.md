@@ -6,8 +6,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-07-26
+
 ### Changed
 
+- `delete_artifact` now requires a boolean `confirm: true` argument after
+  explicit user approval. Calls without `confirm: true` are rejected. The
+  REST API, CLI, and Python SDK are unchanged — this gate is MCP-only.
+  Both hosted HTTP (`mcp.artifacta.io`) and local stdio (npm / PyPI) enforce
+  it. The bundled `persisting-outputs` skill and Mintlify MCP overview
+  document the new requirement.
 - `store_artifact` description now states that `path` only works when the MCP
   server runs on the same machine as the file — on the hosted server
   (`mcp.artifacta.io`) and the Claude Code plugin it resolves inside the

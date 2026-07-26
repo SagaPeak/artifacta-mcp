@@ -1,7 +1,9 @@
 // AF_MCP-4.1 — delete_artifact tool (destructive — gated, P0).
 //
 // Soft-deletes an artifact. Maps to DELETE /v1/artifacts/{id}. Plan §2.9
-// verbatim for description and input schema.
+// description base, plus a required MCP-only `confirm: true` argument so
+// agents cannot delete without an explicit boolean acknowledgement (API/CLI/
+// SDK are unchanged and do not use this flag).
 //
 // SAFETY CLASSIFICATION: registered with `safety: "destructive"` per plan
 // §5.2 ("Irreversible after 30-day grace and unrecoverable thereafter.
@@ -13,6 +15,9 @@
 //     set at launch.
 //   - When --allow-destructive exposes the tool to a non-compliant client,
 //     server.ts emits the §5 stderr audit line per call.
+//   - Separately, the handler rejects any call where `confirm` is not the
+//     boolean literal `true` (covers hosted HTTP where requiresConfirmation
+//     is inert).
 // ARTIFACTA_MCP_REQUIRE_WRITE_CONFIRM has no effect (it only promotes the four
 // write tools in WRITE_CONFIRM_TOOL_NAMES; destructive tools are already
 // gated). --allow-destructive is read from argv only (parseSafetyFlags in
@@ -34,12 +39,13 @@ import { ARTIFACT_ID_PATTERN } from "../ids/formats.js";
 
 const ARTIFACT_ID_RE = new RegExp(ARTIFACT_ID_PATTERN);
 
-// Plan §2.9 description — verbatim.
+// Plan §2.9 description base + MCP confirm gate.
 export const DELETE_ARTIFACT_DESCRIPTION =
   "Soft-delete an artifact. The artifact disappears from listings immediately " +
   "and download URLs return `410 Gone`. Storage and the underlying R2 blob are " +
   "hard-deleted by a background job 30 days later. There is no undo from the " +
-  "API — do not call without explicit user confirmation.";
+  "API — do not call without explicit user confirmation. Requires `confirm: true` " +
+  "only after the user has explicitly approved deleting this artifact_id.";
 
 export const DELETE_ARTIFACT_TOOL: Tool = {
   name: "delete_artifact",
@@ -48,8 +54,15 @@ export const DELETE_ARTIFACT_TOOL: Tool = {
     type: "object",
     properties: {
       artifact_id: { type: "string", pattern: ARTIFACT_ID_PATTERN },
+      confirm: {
+        type: "boolean",
+        const: true,
+        description:
+          "Must be the boolean literal true, and only after the user has " +
+          "explicitly approved deleting this artifact_id in the current conversation.",
+      },
     },
-    required: ["artifact_id"],
+    required: ["artifact_id", "confirm"],
     additionalProperties: false,
   },
 };
@@ -66,6 +79,7 @@ export const deleteArtifactHandler = async (
   ctx?: ToolCallContext
 ): Promise<CallToolResult> => {
   const artifactId = (args ?? {}).artifact_id;
+  const confirm = (args ?? {}).confirm;
 
   // The MCP SDK does not validate inputSchema before dispatch; catch a
   // non-compliant client that bypasses its own validation. The schema gate in
@@ -77,6 +91,24 @@ export const deleteArtifactHandler = async (
         {
           type: "text",
           text: "Bad arguments: artifact_id is required and must match ^art_[A-Za-z0-9]{16}$. Adjust the inputs and call again.",
+        },
+      ],
+      _meta: { code: "invalid_request", status: 400, retry_hint: "do_not_retry" },
+    };
+  }
+
+  // MCP-only consent flag (not sent to the API). Hosted HTTP leaves
+  // requiresConfirmation inert, so this is the durable agent-facing gate.
+  if (confirm !== true) {
+    return {
+      isError: true,
+      content: [
+        {
+          type: "text",
+          text:
+            "Bad arguments: confirm must be the boolean literal true, and only " +
+            "after the user has explicitly approved deleting this artifact_id. " +
+            "Ask the user to confirm, then call again with confirm: true.",
         },
       ],
       _meta: { code: "invalid_request", status: 400, retry_hint: "do_not_retry" },

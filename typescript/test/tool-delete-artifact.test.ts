@@ -22,6 +22,7 @@ import type { ArtifactaHttpClient } from "../src/http/client.js";
 import type { HttpResult } from "../src/http/types.js";
 
 const VALID_ID = "art_AAAAAAAAAAAAAAAA";
+const VALID_ARGS = { artifact_id: VALID_ID, confirm: true as const };
 
 const DELETE_SUCCESS = {
   artifact_id: VALID_ID,
@@ -75,58 +76,71 @@ describe("AF_MCP-4.1 — delete_artifact registration", () => {
     expect(DELETE_ARTIFACT_TOOL.description).toBe(DELETE_ARTIFACT_DESCRIPTION);
   });
 
-  it("description is plan §2.9 verbatim", () => {
+  it("description is plan §2.9 base plus MCP confirm gate", () => {
     expect(DELETE_ARTIFACT_DESCRIPTION).toBe(
-      "Soft-delete an artifact. The artifact disappears from listings immediately and download URLs return `410 Gone`. Storage and the underlying R2 blob are hard-deleted by a background job 30 days later. There is no undo from the API — do not call without explicit user confirmation."
+      "Soft-delete an artifact. The artifact disappears from listings immediately and download URLs return `410 Gone`. Storage and the underlying R2 blob are hard-deleted by a background job 30 days later. There is no undo from the API — do not call without explicit user confirmation. Requires `confirm: true` only after the user has explicitly approved deleting this artifact_id."
     );
   });
 
-  it("AF_MCP-4.1.17: description contains the 'no undo' warning", () => {
+  it("AF_MCP-4.1.17: description contains the 'no undo' warning and confirm gate", () => {
     expect(DELETE_ARTIFACT_DESCRIPTION).toContain("no undo");
     expect(DELETE_ARTIFACT_DESCRIPTION).toContain(
       "do not call without explicit user confirmation"
     );
+    expect(DELETE_ARTIFACT_DESCRIPTION).toContain("confirm: true");
   });
 
   it("input schema satisfies the structural MCP contract", () => {
     expect(checkToolSchemaContract(DELETE_ARTIFACT_TOOL)).toEqual([]);
   });
 
-  it("input schema: single required artifact_id pinned to ARTIFACT_ID_PATTERN (§2.9)", () => {
+  it("input schema: required artifact_id + confirm:true const (§2.9 + MCP confirm gate)", () => {
     const s = DELETE_ARTIFACT_TOOL.inputSchema as Record<string, unknown>;
-    expect(s.required).toEqual(["artifact_id"]);
+    expect(s.required).toEqual(["artifact_id", "confirm"]);
     expect(s.additionalProperties).toBe(false);
     const props = s.properties as Record<string, Record<string, unknown>>;
     expect(props.artifact_id.pattern).toBe(ARTIFACT_ID_PATTERN);
+    expect(props.confirm.type).toBe("boolean");
+    expect(props.confirm.const).toBe(true);
   });
 });
 
 // ─── Schema validation gate ──────────────────────────────────────────────────
 
 describe("AF_MCP-4.1 — schema validation gate", () => {
-  it("accepts a valid 16-char alnum id", () => {
+  it("accepts a valid 16-char alnum id with confirm: true", () => {
     const validate = compileToolSchema(DELETE_ARTIFACT_TOOL);
-    expect(validate({ artifact_id: VALID_ID })).toBe(true);
+    expect(validate(VALID_ARGS)).toBe(true);
   });
 
   it("AF_MCP-4.1.16: rejects invalid artifact_id at schema (API not called)", () => {
     const validate = compileToolSchema(DELETE_ARTIFACT_TOOL);
-    expect(validate({ artifact_id: "not_an_id" })).toBe(false);
+    expect(validate({ artifact_id: "not_an_id", confirm: true })).toBe(false);
   });
 
   it("rejects a 15-char id (one short)", () => {
     const validate = compileToolSchema(DELETE_ARTIFACT_TOOL);
-    expect(validate({ artifact_id: "art_123456789012345" })).toBe(false);
+    expect(validate({ artifact_id: "art_123456789012345", confirm: true })).toBe(false);
   });
 
   it("rejects an extra unknown property (additionalProperties: false)", () => {
     const validate = compileToolSchema(DELETE_ARTIFACT_TOOL);
-    expect(validate({ artifact_id: VALID_ID, extra: 1 })).toBe(false);
+    expect(validate({ ...VALID_ARGS, extra: 1 })).toBe(false);
   });
 
   it("rejects payload missing artifact_id", () => {
     const validate = compileToolSchema(DELETE_ARTIFACT_TOOL);
-    expect(validate({})).toBe(false);
+    expect(validate({ confirm: true })).toBe(false);
+  });
+
+  it("rejects payload missing confirm", () => {
+    const validate = compileToolSchema(DELETE_ARTIFACT_TOOL);
+    expect(validate({ artifact_id: VALID_ID })).toBe(false);
+  });
+
+  it("rejects confirm: false (const true only)", () => {
+    const validate = compileToolSchema(DELETE_ARTIFACT_TOOL);
+    expect(validate({ artifact_id: VALID_ID, confirm: false })).toBe(false);
   });
 });
 
@@ -295,7 +309,7 @@ describe("AF_MCP-4.1 — delete_artifact handler (success)", () => {
       data: DELETE_SUCCESS,
     } satisfies HttpResult);
 
-    const result = await deleteArtifactHandler({ artifact_id: VALID_ID });
+    const result = await deleteArtifactHandler(VALID_ARGS);
     expect(result.isError).toBeUndefined();
     expect(mockRequest).toHaveBeenCalledOnce();
 
@@ -322,7 +336,7 @@ describe("AF_MCP-4.1 — delete_artifact handler (success)", () => {
       status: 200,
       data: DELETE_SUCCESS,
     } satisfies HttpResult);
-    await deleteArtifactHandler({ artifact_id: VALID_ID });
+    await deleteArtifactHandler(VALID_ARGS);
     const opts = mockRequest.mock.calls[0][0] as {
       callerIdempotencyKey?: string;
       body?: unknown;
@@ -337,7 +351,7 @@ describe("AF_MCP-4.1 — delete_artifact handler (success)", () => {
       status: 200,
       data: DELETE_SUCCESS,
     } satisfies HttpResult);
-    await deleteArtifactHandler({ artifact_id: VALID_ID });
+    await deleteArtifactHandler(VALID_ARGS);
     const opts = mockRequest.mock.calls[0][0] as { path: string };
     expect(opts.path).toBe(`/v1/artifacts/${encodeURIComponent(VALID_ID)}`);
   });
@@ -358,7 +372,7 @@ describe("AF_MCP-4.1 — idempotent replay on 410 artifact_already_deleted", () 
       attempts: 1,
     } satisfies HttpResult);
 
-    const result = await deleteArtifactHandler({ artifact_id: VALID_ID });
+    const result = await deleteArtifactHandler(VALID_ARGS);
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(
       (result.content[0] as { text: string }).text
@@ -386,8 +400,8 @@ describe("AF_MCP-4.1 — idempotent replay on 410 artifact_already_deleted", () 
         attempts: 1,
       } satisfies HttpResult);
 
-    const first = await deleteArtifactHandler({ artifact_id: VALID_ID });
-    const second = await deleteArtifactHandler({ artifact_id: VALID_ID });
+    const first = await deleteArtifactHandler(VALID_ARGS);
+    const second = await deleteArtifactHandler(VALID_ARGS);
     expect(first.isError).toBeUndefined();
     expect(second.isError).toBeUndefined();
 
@@ -419,7 +433,7 @@ describe("AF_MCP-4.1 — error translation", () => {
       attempts: 1,
     } satisfies HttpResult);
 
-    const result = await deleteArtifactHandler({ artifact_id: VALID_ID });
+    const result = await deleteArtifactHandler(VALID_ARGS);
     expect(result.isError).toBe(true);
     const meta = result._meta as Record<string, unknown> | undefined;
     expect(meta?.code).toBe("artifact_not_found");
@@ -442,7 +456,7 @@ describe("AF_MCP-4.1 — error translation", () => {
       attempts: 1,
     } satisfies HttpResult);
 
-    const result = await deleteArtifactHandler({ artifact_id: VALID_ID });
+    const result = await deleteArtifactHandler(VALID_ARGS);
     expect(result.isError).toBe(true);
     const meta = result._meta as Record<string, unknown> | undefined;
     expect(meta?.code).toBe("unauthorized");
@@ -465,7 +479,7 @@ describe("AF_MCP-4.1 — auto-retry policy", () => {
       attempts: 4,
     } satisfies HttpResult);
 
-    const result = await deleteArtifactHandler({ artifact_id: VALID_ID });
+    const result = await deleteArtifactHandler(VALID_ARGS);
     expect(result.isError).toBe(true);
     const opts = mockRequest.mock.calls[0][0] as { retryPolicy: string };
     expect(opts.retryPolicy).toBe("idempotentWrite");
@@ -494,6 +508,32 @@ describe("AF_MCP-4.1 — defensive runtime validation", () => {
   it("non-string artifact_id → local invalid_request, API not called", async () => {
     const result = await deleteArtifactHandler({
       artifact_id: 123 as unknown as string,
+      confirm: true,
+    });
+    expect(result.isError).toBe(true);
+    expect(mockRequest).not.toHaveBeenCalled();
+    expect((result._meta as Record<string, unknown>).code).toBe("invalid_request");
+  });
+
+  it("missing confirm → local invalid_request, API not called", async () => {
+    const result = await deleteArtifactHandler({ artifact_id: VALID_ID });
+    expect(result.isError).toBe(true);
+    expect(mockRequest).not.toHaveBeenCalled();
+    expect((result._meta as Record<string, unknown>).code).toBe("invalid_request");
+    expect((result.content[0] as { text: string }).text).toContain("confirm");
+  });
+
+  it("confirm: false → local invalid_request, API not called", async () => {
+    const result = await deleteArtifactHandler({ artifact_id: VALID_ID, confirm: false });
+    expect(result.isError).toBe(true);
+    expect(mockRequest).not.toHaveBeenCalled();
+    expect((result._meta as Record<string, unknown>).code).toBe("invalid_request");
+  });
+
+  it("confirm: \"true\" string → local invalid_request, API not called", async () => {
+    const result = await deleteArtifactHandler({
+      artifact_id: VALID_ID,
+      confirm: "true" as unknown as boolean,
     });
     expect(result.isError).toBe(true);
     expect(mockRequest).not.toHaveBeenCalled();

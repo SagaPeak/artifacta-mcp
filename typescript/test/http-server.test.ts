@@ -134,7 +134,7 @@ describe("GET /.well-known/oauth-protected-resource (AG-05)", () => {
     // Default resourceUri keeps the /mcp path on `resource`.
     expect(body.resource).toBe("https://mcp.artifacta.io/mcp");
     expect(body.authorization_servers).toEqual([
-      "https://artifacta.supabase.co/auth/v1",
+      "https://vliolvdztzcrtuolrgdi.supabase.co/auth/v1",
     ]);
     // OIDC scopes only — Supabase Auth (the AS) rejects custom artifacts:*
     // scopes at /authorize. Artifact tool scopes are granted at consent/hook
